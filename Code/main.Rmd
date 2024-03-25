@@ -7,5 +7,130 @@ output: html_document
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
+
+# This sets the root directory for knitr to the project directory.
+knitr::opts_knit$set(root.dir = "~/Documents/Work/Phd_program/hong_lab/Projects/chabc/")
 ```
 
+# Loading packages
+```{r loading packcages}
+pacman::p_load(broom, ggpubr, tidyverse)
+```
+
+# Loading outcome data
+```{r loading outcome data}
+latency_df <- read_csv("Data/behavior_latency.csv")
+errors_df <- read_csv("Data/behavior_errors.csv")
+```
+
+# Correlation analysis
+```{r correlation analysis between outcomes across cohorts}
+# Remove the identifier column (e.g., 'Day') for analysis
+latency_data <- latency_df %>% select(-Day)
+errors_data <- errors_df %>% select(-Day)
+
+# Prepare a data frame to store results
+results_cohort <- tibble(
+  Cohort = colnames(latency_data),
+  Tau = numeric(length(colnames(latency_data))),
+  P_Value = numeric(length(colnames(latency_data))),
+  Strength = numeric(length(colnames(latency_data)))
+)
+
+# Perform Kendall’s Tau analysis
+for (i in 1:ncol(latency_data)) {
+  test_result <- cor.test(latency_data[[i]], errors_data[[i]], method = "kendall")
+
+  # Categorizing the correlation strength based on tau value
+  strength <- case_when(
+    abs(test_result$estimate) < 0.3 ~ "Weak",
+    abs(test_result$estimate) >= 0.3 & abs(test_result$estimate) < 0.5 ~ "Moderate",
+    abs(test_result$estimate) >= 0.5 ~ "Strong"
+  )
+  results_cohort$Tau[i] <- test_result$estimate
+  results_cohort$P_Value[i] <- test_result$p.value
+  results_cohort$Strength[i] <- strength
+}
+
+# View the results
+print(results_cohort)
+```
+
+
+```{r latency across cohorts by timepoint analysis}
+# Remove the identifier column (e.g., 'Day') for analysis
+latency_data_t <- t(latency_df %>% select(-Day))
+errors_data_t <- t(errors_df %>% select(-Day))
+colnames(latency_data_t) <- latency_df$Day
+colnames(errors_data_t) <- latency_df$Day
+
+
+# Prepare a data frame to store results
+results_day <- tibble(
+  Day = colnames(latency_data_t),
+  Tau = numeric(6),
+  P_Value = numeric(6),
+  Strength = character(6)
+)
+
+# Perform Kendall’s Tau analysis
+for (i in 1:ncol(latency_data_t)) {
+  test_result <- cor.test(latency_data_t[, i], errors_data_t[, i], method = "kendall")
+
+  # Categorizing the correlation strength based on tau value
+  strength <- case_when(
+    abs(test_result$estimate) < 0.3 ~ "Weak",
+    abs(test_result$estimate) >= 0.3 & abs(test_result$estimate) < 0.5 ~ "Moderate",
+    abs(test_result$estimate) >= 0.5 ~ "Strong"
+  )
+  results_day$Tau[i] <- test_result$estimate
+  results_day$P_Value[i] <- test_result$p.value
+  results_day$Strength[i] <- strength
+}
+
+# View the results
+print(results_day)
+```
+
+# Visualizing the results of the correlation analysis
+```{r barplots}
+results_cohort <- results_cohort %>%
+  mutate(Cohort = str_remove(Cohort, "^#")) %>%
+  filter(!is.na(Tau))
+
+p1 <- ggplot(data = results_cohort, aes(x = Cohort, y = Tau))+
+  geom_col(width = 0.5, fill = "skyblue") +
+  theme(panel.background = element_blank(),
+        axis.title = element_text(size = 20, face = "bold"),
+        plot.title = element_text(size = 22, face = "bold", hjust = 0.5),
+        axis.text = element_text(size = 18),
+        axis.text.x = element_text(angle = 45, vjust = 0.4),
+        axis.ticks = element_line(linewidth = 0.8),
+        axis.ticks.length = unit(0.25, "cm"),
+        axis.line = element_line(color = "black",linewidth = 1.25))+
+  ggtitle(expression(paste(Tau, " Across Days by Cohort"))) + 
+  ylab(expression(Tau))+
+  geom_hline(yintercept = 0.5, color = "red", linewidth = 0.8)+
+  geom_hline(yintercept = 0.0, color = "black", linetype = "dashed", linewidth = 0.8)
+
+
+p2 <- ggplot(data = results_day, aes(x = Day, y = Tau))+
+  geom_col(width = 0.5, fill = "skyblue") +
+  theme(panel.background = element_blank(),
+        axis.title = element_text(size = 20, face = "bold"),
+        plot.title = element_text(size = 22, face = "bold", hjust = 0.5),
+        axis.text = element_text(size = 18),
+        axis.text.x = element_text(angle = 45, vjust = 0.4),
+        axis.ticks = element_line(linewidth = 0.8),
+        axis.ticks.length = unit(0.25, "cm"),
+        axis.line = element_line(color = "black",linewidth = 1.25))+
+  ggtitle(expression(paste(Tau, " Across Cohorts by Day"))) + 
+  ylab(expression(Tau))+
+  scale_y_continuous(expand = c(0,0))+
+  coord_cartesian(ylim = c(0.0, 0.8))+
+  geom_hline(yintercept = 0.5, color = "red", linewidth = 0.8)
+
+
+# Combo plot
+combo_tau <- ggarrange(p1, p2, ncol = 2, nrow = 1, labels = "AUTO", font.label = list(size = 18, face = "bold"), align = "h")
+```
