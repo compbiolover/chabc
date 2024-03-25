@@ -1,2 +1,2 @@
-# chabc
+# ChABC
 ChABC Project
