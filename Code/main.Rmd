@@ -14,7 +14,7 @@ knitr::opts_knit$set(root.dir = "~/Documents/Work/Phd_program/hong_lab/Projects/
 
 # Loading packages
 ```{r loading packcages}
-pacman::p_load(broom, cluster, ggforce, ggpubr, reshape2, tidyverse)
+pacman::p_load(broom, cluster, ggforce, ggpubr, gridExtra, reshape2, tidyverse, viridis)
 ```
 
 # Loading outcome data
@@ -22,6 +22,86 @@ pacman::p_load(broom, cluster, ggforce, ggpubr, reshape2, tidyverse)
 latency_df <- read_csv("Data/behavior_latency.csv")
 errors_df <- read_csv("Data/behavior_errors.csv")
 ```
+
+# Visualizing distribution of errors and latency from the outcomes files
+```{r visualize initial outcome data}
+# First, summary stats by cohort of the errors and latency to append to finished dataframes later
+errors_ggplot <- melt(errors_df)
+colnames(errors_ggplot) <- c("Day", "Cohort", "Number")
+
+# See distribution of latency times
+latency_ggplot <- melt(latency_df)
+colnames(latency_ggplot) <- c("Day", "Cohort", "Latency")
+latency_ggplot <- as_tibble(latency_ggplot)
+
+# Rounding to 2 decimal places to make it easy to see
+latency_ggplot <- latency_ggplot %>%
+  mutate(Latency = round(Latency, digits = 2))
+
+
+errors_ggplot <- as_tibble(errors_ggplot)
+
+df_errors_summary <- errors_ggplot %>%
+  group_by(Cohort) %>%
+  summarize(
+    total_errors = sum(Number),
+    avg_errors = mean(Number),
+    .groups = "drop"
+  )
+
+
+df_latency_summary <- latency_ggplot %>%
+  group_by(Cohort) %>%
+  summarize(
+    avg_latency = mean(Latency),
+    .groups = "drop"
+  )
+
+# See distribution of errors within retrieval data
+h1 <- ggplot(data = errors_ggplot, aes(x = Day, y = Cohort, fill = Number)) +
+  geom_tile() +
+  ggtitle("Errors") +
+  theme(
+    panel.background = element_blank(),
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5),
+    axis.title = element_text(size = 20, face = "bold"),
+    axis.text = element_text(size = 18),
+    legend.text = element_text(size = 18),
+    legend.title = element_text(size = 20, vjust = 1),
+    legend.position = "bottom"
+  ) +
+  coord_fixed() +
+  geom_text(aes(label = Number), color = "white") +
+  scale_fill_viridis(option = "C")
+
+ggsave(plot = h1, filename = "pup_retrieval_errors.png", path = "Outputs/Plots/exploratory_plots/", device = "png", units = "in", width = 8, height = 8, dpi = 600)
+
+
+h2 <- ggplot(data = latency_ggplot, aes(x = Day, y = Cohort, fill = Latency)) +
+  geom_tile() +
+  ggtitle("Latency") +
+  theme(
+    panel.background = element_blank(),
+    plot.title = element_text(size = 22, face = "bold", hjust = 0.5),
+    axis.title = element_text(size = 20, face = "bold"),
+    axis.text = element_text(size = 18),
+    legend.text = element_text(size = 14),
+    legend.title = element_text(size = 20, vjust = 1),
+    legend.position = "bottom",
+    legend.key.width = unit(1, "cm")
+  ) +
+  coord_fixed() +
+  geom_text(aes(label = Latency), color = "white") +
+  scale_fill_viridis(option = "C")
+
+ggsave(plot = h2, filename = "pup_retrieval_latency.png", path = "Outputs/Plots/exploratory_plots/", device = "png", units = "in", width = 8, height = 8, dpi = 600)
+
+# Combo plot of outcome measures
+combo_outcomes <- ggarrange(h1, h2, ncol = 2, nrow = 1, labels = "AUTO", align = "h", font.label = list(size = 20, face = "bold"))
+
+ggsave(plot = combo_outcomes, filename = "combo_outcomes.png", path = "Outputs/Plots/exploratory_plots/", device = "png", width = 12, height = 12, units = "in", dpi = 600, bg = "white")
+```
+
 
 # Correlation analysis
 ```{r correlation analysis between outcomes across cohorts}
@@ -54,6 +134,11 @@ for (i in 1:ncol(latency_data)) {
 
 # View the results
 print(results_cohort)
+
+# Saving
+pdf("Outputs/tau_correlation_across_days_by_cohort.pdf")
+grid.table(results_cohort)
+dev.off()
 ```
 
 
@@ -90,6 +175,11 @@ for (i in 1:ncol(latency_data_t)) {
 
 # View the results
 print(results_day)
+
+# Saving
+pdf("Outputs/tau_correlation_across_cohorts_by_day.pdf")
+grid.table(results_day)
+dev.off()
 ```
 
 # Visualizing the results of the correlation analysis
@@ -149,7 +239,7 @@ mean_tau <- mean(results_cohort$tau)
 p3 <- ggplot(data = results_cohort, aes(x = cohort_all, y = tau)) +
   geom_violin() +
   geom_sina(jitter_y = FALSE, size = 6) +
-  geom_point(data = data.frame(x = "All", y = mean_tau), aes(x = x, y = y), color = "red", size = 8, shape = 5) +
+  geom_point(data = data.frame(x = "All", y = mean_tau), aes(x = x, y = y), color = "#FF7276", fill = "#FF7276", size = 8, shape = 5) +
   theme(
     panel.background = element_blank(),
     axis.title = element_text(size = 20, face = "bold"),
@@ -175,7 +265,7 @@ mean_tau <- mean(results_day$tau)
 p4 <- ggplot(data = results_day, aes(x = day_all, y = tau)) +
   geom_violin() +
   geom_sina(jitter_y = FALSE, size = 6) +
-  geom_point(data = data.frame(x = "All", y = mean_tau), aes(x = x, y = y), color = "red", size = 8, shape = 5) +
+  geom_point(data = data.frame(x = "All", y = mean_tau), aes(x = x, y = y), color = "#FF7276", fill = "#FF7276", size = 8, shape = 5) +
   theme(
     panel.background = element_blank(),
     axis.title = element_text(size = 20, face = "bold"),
@@ -196,18 +286,17 @@ p4 <- ggplot(data = results_day, aes(x = day_all, y = tau)) +
 combo_tau <- ggarrange(p1, p2, p3, p4, ncol = 2, nrow = 2, labels = "AUTO", font.label = list(size = 18, face = "bold"), align = "hv")
 
 # Saving finished plot
-ggsave(filename = "tau_combo_plot.png", plot = combo_tau, path = "Outputs/Plots/", width = 12, height = 12, units = "in", dpi = 600, bg = "white", device = "png")
+ggsave(filename = "tau_combo_plot.png", plot = combo_tau, path = "Outputs/Plots/exploratory_plots/", width = 12, height = 12, units = "in", dpi = 600, bg = "white", device = "png")
 ```
 
 
-# Now creating a multi-outcome regression model with geepack
-```{r multi-outcome regression model}
+# Now creating correlation analysis between average latency, average errors, or total errors and reduction values based on our various approaches
+```{r broad correlation analysis}
 # Function to extract relevant data to get ready for model format
 extract_columns <- function(data, file_name = "ssp_bfd") {
   # Initialize an empty list to store the extracted columns
   extracted_columns <- list()
 
-  print(file_name)
   # Extract the subregion used by regex for later incorporation
   if (file_name != "Data/chabc_ss_s.csv") {
     subregion_name <- sub(".*/(chabc_ssp_[^./]+)\\.csv", "\\1", file_name)
@@ -240,6 +329,17 @@ extract_columns <- function(data, file_name = "ssp_bfd") {
   return(extracted_df)
 }
 
+# Function to check if all reduction values are the same (k-means will fail in this case)
+# Check if all values in the dataframe are the same
+check_unique_value <- function(df) {
+  unique_values <- unique(unlist(df))
+  num_unique <- length(unique_values)
+  if (num_unique == 1) {
+    return(TRUE) # All values are the same
+  } else {
+    return(FALSE) # Data contains more than one unique value
+  }
+}
 
 pred_files <- list.files(path = "Data/", pattern = "chabc_")
 all_subs <- list()
@@ -260,152 +360,306 @@ colnames(all_sub_df)[2] <- "reduction"
 data_to_split <- all_sub_df %>% group_by(subregion, cohort)
 all_dfs <- group_split(data_to_split)
 
+# List of dataframes that are only focused on unique subregions
+data_to_split2 <- all_sub_df %>% group_by(subregion)
+all_dfs2 <- group_split(data_to_split2)
+
 # Now trying to apply this to all the dataframes in the list
-process_dataframe <- function(df, k = 2, print_results = TRUE, plot_silhouette = TRUE) {
-  # Median Approach
-  df <- df %>%
-    mutate(median_label = if_else(map <= median(as.numeric(map)), "rostral", "caudal"))
-
-  median_value <- median(as.numeric(df$map))
-  rostral <- df$map <= median_value
-  caudal <- df$map > median_value
-
+process_dataframe_reduction <- function(df, errors_summary = NULL, latency_summary = NULL, k = 2, print_results = TRUE, plot_silhouette = TRUE) {
   # Clustering Approach (K-means)
   k <- k
-  clustering <- kmeans(matrix(df$map), centers = k)
-  cluster_centers <- clustering$centers
-  rostral_cluster <- df$map <= min(cluster_centers)
-  caudal_cluster <- df$map > min(cluster_centers)
+  if (!check_unique_value(matrix(df$reduction))) {
+    # Mean Approach
+    df <- df %>%
+      mutate(mean_label = if_else(reduction <= mean(as.numeric(reduction)), "less", "more"))
 
-  df <- df %>%
-    mutate(kmeans_label = if_else(map <= min(clustering$centers), "rostral", "caudal"))
+    mean_value <- mean(as.numeric(df$reduction))
+    less_mean <- df$reduction <= mean_value
+    more_mean <- df$reduction > mean_value
 
-  # Calculate silhouette scores
-  silhouette_scores <- silhouette(clustering$cluster, dist(df$map))
 
-  # Plot silhouette scores (optional)
-  if (plot_silhouette) {
-    png(filename = paste0("Outputs/Plots/silhouette_plots/silhouette_plot_", nrow(cluster_centers), "_clusters_cohort_", unique(df$cohort), "_subregion_", unique(df$subregion), ".png"), width = 8, height = 8, units = "in", res = 600, bg = "white")
-    plot(silhouette_scores, main = paste0(" K-means Clustering | Clusters:  ", nrow(cluster_centers), " | ", unique(df$cohort), " | ", str_to_title(unique(df$subregion))), col = "skyblue")
-    dev.off()
+    # Median Approach
+    df <- df %>%
+      mutate(median_label = if_else(reduction <= median(as.numeric(reduction)), "less", "more"))
+
+    median_value <- median(as.numeric(df$reduction))
+    less_median <- df$reduction <= median_value
+    more_median <- df$reduction > median_value
+
+    clustering <- kmeans(matrix(df$reduction), centers = k)
+    cluster_centers <- clustering$centers
+    less_cluster <- df$reduction <= min(cluster_centers)
+    more_cluster <- df$reduction > min(cluster_centers)
+
+    df <- df %>%
+      mutate(kmeans_label = if_else(reduction <= min(clustering$centers), "less", "more"))
+
+    # Calculate silhouette scores
+    silhouette_scores <- silhouette(clustering$cluster, dist(df$reduction))
+
+    # Plot silhouette scores (optional)
+    if (plot_silhouette) {
+      png(filename = paste0("Outputs/Plots/silhouette_plots/silhouette_plot_", nrow(cluster_centers), "_clusters_subregion_", unique(df$subregion), "_", unique(df$cohort), "_cohort_reduction.png"), width = 8, height = 8, units = "in", res = 600, bg = "white")
+      plot(silhouette_scores, main = paste0(" K-means Clustering | Clusters:  ", nrow(cluster_centers), " | ", str_to_title(unique(df$subregion)), " | ", str_to_title(unique(df$cohort))), col = "skyblue")
+      dev.off()
+    }
+
+
+    # Print the results (optional)
+    if (print_results) {
+      cat("Mean Approach:\n")
+      cat("Less:", df$reduction[less_mean], "\n")
+      cat("More:", df$reduction[more_mean], "\n")
+
+      cat("Median Approach:\n")
+      cat("Less:", df$reduction[less_median], "\n")
+      cat("More:", df$reduction[more_median], "\n")
+
+      cat("Clustering Approach (K-means):\n")
+      cat("Less:", df$reduction[less_cluster], "\n")
+      cat("More:", df$reduction[more_cluster], "\n\n")
+    }
+
+    # Now getting average reduction by kmeans_label
+    # Calculate the average reduction for each kmeans_label group
+    average_reduction_kmeans <- df %>%
+      filter(!is.na(reduction) & !is.na(as.numeric(reduction))) %>%
+      group_by(kmeans_label) %>%
+      mutate(reduction = as.numeric(reduction)) %>%
+      summarize(average_reduction_kmeans = mean(reduction, na.rm = TRUE))
+
+    # Join this average reduction back to the original data frame
+    df <- df %>%
+      left_join(average_reduction_kmeans, by = "kmeans_label") %>%
+      rename(average_reduction_by_kmeans = average_reduction_kmeans)
+
+    # Now getting average reduction by mean_label
+    average_reduction_mean <- df %>%
+      group_by(mean_label) %>%
+      mutate(reduction = as.numeric(reduction)) %>%
+      summarize(average_reduction_mean = mean(reduction, na.rm = TRUE))
+
+
+    # Now getting average reduction by median_label
+    average_reduction_median <- df %>%
+      group_by(median_label) %>%
+      mutate(reduction = as.numeric(reduction)) %>%
+      summarize(average_reduction_median = mean(reduction, na.rm = TRUE))
+
+    # Join this average reduction back to the original data frame
+    df <- df %>%
+      left_join(average_reduction_mean, by = "mean_label") %>%
+      rename(average_reduction_by_mean = average_reduction_mean)
+
+    # Join this average reduction back to the original data frame
+    df <- df %>%
+      left_join(average_reduction_median, by = "median_label") %>%
+      rename(average_reduction_by_median = average_reduction_median)
+
+    # Joining the errors and latency summaries by Cohort
+    df <- df %>%
+      left_join(df_errors_summary, by = c("cohort" = "Cohort")) %>%
+      left_join(df_latency_summary, by = c("cohort" = "Cohort"))
   }
-
-
-  # Print the results (optional)
-  if (print_results) {
-    cat("Median Approach:\n")
-    cat("Rostral:", df$map[rostral], "\n")
-    cat("Caudal:", df$map[caudal], "\n\n")
-
-    cat("Clustering Approach (K-means):\n")
-    cat("Rostral:", df$map[rostral_cluster], "\n")
-    cat("Caudal:", df$map[caudal_cluster], "\n")
-  }
-
-  # Now getting average reduction by kmeans_label
-  # Calculate the average reduction for each kmeans_label group
-  average_reduction_kmeans <- df %>%
-    filter(!is.na(reduction) & !is.na(as.numeric(reduction))) %>%
-    group_by(kmeans_label) %>%
-    mutate(reduction = as.numeric(reduction)) %>%
-    summarize(average_reduction_kmeans = mean(reduction, na.rm = TRUE))
-
-  # Join this average reduction back to the original data frame
-  df <- df %>%
-    left_join(average_reduction_kmeans, by = "kmeans_label") %>%
-    rename(average_reduction_by_kmeans = average_reduction_kmeans)
-
-
-  average_reduction_median <- df %>%
-    filter(!is.na(reduction) & !is.na(as.numeric(reduction))) %>%
-    group_by(median_label) %>%
-    mutate(reduction = as.numeric(reduction)) %>%
-    summarize(average_reduction_median = mean(reduction, na.rm = TRUE))
-
-  # Join this average reduction back to the original data frame
-  df <- df %>%
-    left_join(average_reduction_median, by = "median_label") %>%
-    rename(average_reduction_by_median = average_reduction_median)
 
   # Return the processed dataframe
   return(df)
 }
 
-# Apply the set of operations to each dataframe in the list
+process_dataframe_map <- function(df, errors_summary = NULL, latency_summary = NULL, k = 2, print_results = TRUE, plot_silhouette = TRUE) {
+  # Clustering Approach (K-means)
+  k <- k
+  if (!check_unique_value(matrix(df$reduction))) {
+    # Mean Approach
+    df <- df %>%
+      mutate(mean_label = if_else(map <= mean(as.numeric(map)), "very rostral", "very caudal"))
+
+    mean_value <- mean(as.numeric(df$map))
+    less_mean <- df$map <= mean_value
+    more_mean <- df$map > mean_value
+
+
+    # Median Approach
+    df <- df %>%
+      mutate(median_label = if_else(map <= median(as.numeric(map)), "very rostral", "very caudal"))
+
+    median_value <- median(as.numeric(df$map))
+    less_median <- df$map <= median_value
+    more_median <- df$map > median_value
+
+    clustering <- kmeans(matrix(df$map), centers = k)
+    cluster_centers <- clustering$centers
+    less_cluster <- df$map <= min(cluster_centers)
+    more_cluster <- df$map > min(cluster_centers)
+
+    df <- df %>%
+      mutate(kmeans_label = if_else(map <= min(clustering$centers), "very rostral", "very caudal"))
+
+    # Calculate silhouette scores
+    silhouette_scores <- silhouette(clustering$cluster, dist(df$map))
+
+    # Plot silhouette scores (optional)
+    if (plot_silhouette) {
+      png(filename = paste0("Outputs/Plots/silhouette_plots/silhouette_plot_", nrow(cluster_centers), "_clusters_subregion_", unique(df$subregion), "_", unique(df$cohort), "_cohort_map.png"), width = 8, height = 8, units = "in", res = 600, bg = "white")
+      plot(silhouette_scores, main = paste0(" K-means Clustering | Clusters:  ", nrow(cluster_centers), " | ", str_to_title(unique(df$subregion)), " | ", str_to_title(unique(df$cohort))), col = "skyblue")
+      dev.off()
+    }
+
+
+    # Print the results (optional)
+    if (print_results) {
+      cat("Mean Approach:\n")
+      cat("Less:", df$map[less_mean], "\n")
+      cat("More:", df$map[more_mean], "\n")
+
+      cat("Median Approach:\n")
+      cat("Less:", df$map[less_median], "\n")
+      cat("More:", df$map[more_median], "\n")
+
+      cat("Clustering Approach (K-means):\n")
+      cat("Less:", df$map[less_cluster], "\n")
+      cat("More:", df$map[more_cluster], "\n\n")
+    }
+
+    # Now getting average reduction by kmeans_label
+    # Calculate the average reduction for each kmeans_label group
+    average_reduction_kmeans <- df %>%
+      filter(!is.na(map) & !is.na(as.numeric(map))) %>%
+      group_by(kmeans_label) %>%
+      mutate(reduction = as.numeric(reduction)) %>%
+      summarize(average_reduction_kmeans = mean(reduction, na.rm = TRUE))
+
+    # Join this average reduction back to the original data frame
+    df <- df %>%
+      left_join(average_reduction_kmeans, by = "kmeans_label") %>%
+      rename(average_reduction_by_kmeans = average_reduction_kmeans)
+
+    # Now getting average reduction by mean_label
+    average_reduction_mean <- df %>%
+      group_by(mean_label) %>%
+      mutate(reduction = as.numeric(reduction)) %>%
+      summarize(average_reduction_mean = mean(reduction, na.rm = TRUE))
+
+
+    # Now getting average reduction by median_label
+    average_reduction_median <- df %>%
+      group_by(median_label) %>%
+      mutate(reduction = as.numeric(reduction)) %>%
+      summarize(average_reduction_median = mean(reduction, na.rm = TRUE))
+
+    # Join this average reduction back to the original data frame
+    df <- df %>%
+      left_join(average_reduction_mean, by = "mean_label") %>%
+      rename(average_reduction_by_mean = average_reduction_mean)
+
+    # Join this average reduction back to the original data frame
+    df <- df %>%
+      left_join(average_reduction_median, by = "median_label") %>%
+      rename(average_reduction_by_median = average_reduction_median)
+
+    # Joining the errors and latency summaries by Cohort
+    df <- df %>%
+      left_join(df_errors_summary, by = c("cohort" = "Cohort")) %>%
+      left_join(df_latency_summary, by = c("cohort" = "Cohort"))
+  }
+
+  # Return the processed dataframe
+  return(df)
+}
+
+# Apply the function to each dataframe in the list
 processed_dataframes <- lapply(all_dfs, function(df) {
-  process_dataframe(df, k = 3, print_results = FALSE, plot_silhouette = TRUE)
+  process_dataframe_map(df, errors_summary = df_errors_summary, latency_summary = df_latency_summary, k = 2, print_results = TRUE, plot_silhouette = FALSE)
 })
 
-# See distribution of errors within retrieval data
-errors_ggplot <- melt(errors_df)
-colnames(errors_ggplot) <- c("Day", "Cohort", "Number")
-errors_ggplot <- as_tibble(errors_ggplot)
-h1 <- ggplot(data = errors_ggplot, aes(x = Day, y = Cohort, fill = Number)) +
-  geom_tile() +
-  ggtitle("Errors") +
-  theme(
-    plot.title = element_text(size = 22, face = "bold", hjust = 0.5),
-    axis.title = element_text(size = 20, face = "bold"),
-    axis.text = element_text(size = 18),
-    legend.text = element_text(size = 18),
-    legend.title = element_text(size = 20, vjust = 1),
-    legend.position = "bottom"
-  ) +
-  coord_fixed() +
-  geom_text(aes(label = Number), color = "black") +
-  scale_fill_gradient(low = "red", high = "green")
 
-ggsave(plot = h1, filename = "pup_retrieval_errors.png", path = "Outputs/Plots/exploratory_plots/", device = "png", units = "in", width = 8, height = 8, dpi = 600)
-
-
-# See distribution of latency times
-latency_ggplot <- melt(latency_df)
-colnames(latency_ggplot) <- c("Day", "Cohort", "Latency")
-latency_ggplot <- as_tibble(latency_ggplot)
-
-# Rounding to 2 decimal places to make it easy to see
-latency_ggplot <- latency_ggplot %>%
-  mutate(Latency = round(Latency, digits = 2))
-
-  
-h2 <- ggplot(data = latency_ggplot, aes(x = Day, y = Cohort, fill = Latency)) +
-  geom_tile() +
-  ggtitle("Latency") +
-  theme(
-    plot.title = element_text(size = 22, face = "bold", hjust = 0.5),
-    axis.title = element_text(size = 20, face = "bold"),
-    axis.text = element_text(size = 18),
-    legend.text = element_text(size = 14),
-    legend.title = element_text(size = 20, vjust = 1),
-    legend.position = "bottom",
-    legend.key.width = unit(1, "cm")
-  ) +
-  coord_fixed() +
-  geom_text(aes(label = Latency), color = "black") +
-  scale_fill_gradient(low = "red", high = "green")
-
-ggsave(plot = h2, filename = "latency_heatmap.png", path = "Outputs/Plots/exploratory_plots/", device = "png", units = "in", width = 8, height = 8, dpi = 600)
-
-# Combo plot of outcome measures
-combo_outcomes <- ggarrange(h1, h2, ncol = 2, nrow = 1, labels = "AUTO", align = "h", font.label = list(size = 20, face = "bold"))
-
-ggsave(plot = combo_outcomes, filename = "combo_outcomes.png", path = "Outputs/Plots/exploratory_plots/", device = "png", width = 12, height = 12, units = "in", dpi = 600, bg = "white")
+# Remove any dataframes that contain NA values
+processed_dataframes <- keep(processed_dataframes, function(df) !any(is.na(df)))
 ```
 
-# Now bringing all the data together for linear model
-```{r all data together for linear model}
-df_errors_summary <- errors_ggplot %>%
-  group_by(Cohort) %>%
-  summarize(total_errors = sum(Number),
-            avg_errors = mean(Number),
-            .groups = 'drop')
+# Plot for kmeans_label by average latencty
+```{r kmeans label by latency plot}
+# Keep dataframes with > 4 columns
+processed_dataframes <- keep(processed_dataframes, function(df) {
+  ncol(df) > 4
+})
+
+all_processed_dfs <- bind_rows(processed_dataframes)
+all_processed_dfs_filtered <- filter(all_processed_dfs, average_reduction_by_kmeans < 10)
 
 
-df_latency_summary <- latency_ggplot %>%
-  group_by(Cohort) %>%
-  summarize(avg_latency = mean(Latency),
-            .groups = 'drop')
+# Function to plot all the data
+plot_correlation <- function(data, x_var, y_var, calculate_correlation = TRUE, correlation_method = "spearman", plot_color = cohort, plot_shape = kmeans_label, point_size = 2, x_label, y_label, plot_title, subregion = NULL) {
+  if (calculate_correlation) {
+    correlation_result <- cor.test(data[[deparse(substitute(x_var))]], data[[deparse(substitute(y_var))]], method = correlation_method)
+  }
 
+  # Formatting the relevant label titles from the data input
+  color_label <- str_to_title(deparse(substitute(plot_color)))
+  shape_label <- str_to_title(deparse(substitute(plot_shape)))
+  color_label <- gsub(x = color_label, pattern = "_", replacement = " ")
+  shape_label <- gsub(x = shape_label, pattern = "_", replacement = " ")
+  x_label <- str_to_title(deparse(substitute(x_var)))
+  x_label <- gsub(x = x_label, pattern = "_", replacement = " ")
+  y_label <- str_to_title(deparse(substitute(y_var)))
+  y_label <- gsub(x = y_label, pattern = "_", replacement = " ")
+  plot_title <- noquote(str_to_title(paste(x_label, "by", y_label)))
+
+  p <- ggplot(data, aes(x = {{ x_var }}, y = {{ y_var }}, color = {{ plot_color }}, shape = {{ plot_shape }}, size = point_size)) +
+    geom_point() +
+    theme(
+      plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+      plot.subtitle = element_text(size = 18, hjust = 0.5),
+      axis.title = element_text(size = 18, face = "bold"),
+      axis.text = element_text(size = 16),
+      legend.title = element_text(size = 18, face = "bold"),
+      legend.text = element_text(size = 16),
+      panel.background = element_blank(),
+      panel.grid.major.x = element_line(color = "black"),
+      panel.grid.major.y = element_line(color = "black")
+    ) +
+    labs(
+      x = x_label, y = y_label,
+      title = plot_title,
+      subtitle = ifelse(
+        calculate_correlation,
+        paste(
+          str_to_title(correlation_method), "=", round(correlation_result$estimate, 2),
+          "p-value =", signif(correlation_result$p.value, digits = 3)
+        ),
+        NULL
+      )
+    ) +
+    scale_color_discrete(name = color_label) +
+    scale_shape_discrete(name = shape_label) +
+    guides(size = "none")
+
+  ggsave(plot = p, filename = paste(tolower(plot_title), "_", correlation_method, "_", subregion,"_", unique(data$cohort)  ,"combined_cohort_map.png"), device = "png", width = 8, height = 8, units = "in", dpi = 600, bg = "white", path = "Outputs/Plots/exploratory_plots/")
+}
+
+
+# Apply the function to each dataframe in the list
+plots_list <- lapply(processed_dataframes, function(df) {
+  plot_correlation(
+    data = df,
+    x_var = average_reduction_by_mean,
+    y_var = total_errors,
+    calculate_correlation = TRUE, # Set to TRUE to calculate correlation
+    correlation_method = "spearman", # Set correlation method
+    plot_color = mean_label,
+    plot_shape = NULL,
+    subregion = df$subregion
+  )
+})
+
+p_combined_1 <-  plot_correlation(
+    data = all_processed_dfs_filtered,
+    x_var = average_reduction_by_median,
+    y_var = avg_latency,
+    calculate_correlation = TRUE, # Set to TRUE to calculate correlation
+    correlation_method = "spearman", # Set correlation method
+    plot_color = median_label,
+    plot_shape = NULL,
+    subregion = NULL
+  )
 ```
-
-
