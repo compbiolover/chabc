@@ -656,8 +656,8 @@ p_combined_1 <-  plot_correlation(
     data = all_processed_dfs_filtered,
     x_var = average_reduction_by_median,
     y_var = avg_latency,
-    calculate_correlation = TRUE, # Set to TRUE to calculate correlation
-    correlation_method = "spearman", # Set correlation method
+    calculate_correlation = TRUE, 
+    correlation_method = "spearman",
     plot_color = median_label,
     plot_shape = NULL,
     subregion = NULL
