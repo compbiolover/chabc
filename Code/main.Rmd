@@ -14,7 +14,7 @@ knitr::opts_knit$set(root.dir = "~/Documents/Work/Phd_program/hong_lab/Projects/
 
 # Loading packages
 ```{r loading packcages}
-pacman::p_load(broom, cluster, ggforce, ggpubr, gridExtra, reshape2, tidyverse, viridis)
+pacman::p_load(broom, cluster, ComplexHeatmap, ggforce, ggpubr, gridExtra, reshape2, rstatix, tidyverse, viridis)
 ```
 
 # Loading outcome data
@@ -381,6 +381,7 @@ process_dataframe_map <- function(df, errors_summary = NULL, latency_summary = N
     less_median <- df$map <= median_value
     more_median <- df$map > median_value
 
+
     clustering <- kmeans(matrix(df$map), centers = k)
     cluster_centers <- clustering$centers
     less_cluster <- df$map <= min(cluster_centers)
@@ -471,18 +472,14 @@ processed_dataframes <- lapply(all_dfs, function(df) {
 processed_dataframes <- keep(processed_dataframes, function(df) !any(is.na(df)))
 ```
 
-# Plot for kmeans_label by average latencty
-```{r kmeans label by latency plot}
-# Keep dataframes with > 4 columns
-processed_dataframes <- keep(processed_dataframes, function(df) {
-  ncol(df) > 4
-})
 
-all_processed_dfs <- bind_rows(processed_dataframes)
-all_processed_dfs_filtered <- filter(all_processed_dfs, kmeans < 10)
+# Global mean calculation
+```{r global mean calculation}
+# Processing all cohorts and subregions together for global mean
+processed_dataframe <- process_dataframe_map(df = all_sub_df, errors_summary = df_errors_summary, latency_summary = df_latency_summary, k = 2, print_results = TRUE, plot_silhouette = FALSE)
 
 
-# Function to plot and calculate correlations for all cohorts withiin a subregion
+# Function to plot and calculate correlations for all cohorts within a subregion
 plot_correlation_by_subregion <- function(data, x_var, y_var, calculate_correlation = TRUE, correlation_method = "spearman", plot_color = cohort, plot_shape = kmeans_label, point_size = 2, x_label, y_label, plot_title, subregion = NULL) {
   if (calculate_correlation) {
     if (is.character(data[[deparse(substitute(x_var))]])) {
@@ -531,6 +528,905 @@ plot_correlation_by_subregion <- function(data, x_var, y_var, calculate_correlat
   y_label <- gsub(x = y_label, pattern = "_", replacement = " ")
   plot_title <- noquote(str_to_title(paste(x_label, "by", y_label, " | \n", subregion)))
 
+  # Calculating the additional correlation data for the faceted variable (kmeans_label)
+  if (deparse(substitute(x_var)) == "kmeans") {
+    data_rost <- data %>% filter(kmeans_label == "very rostral")
+    data_caud <- data %>% filter(kmeans_label == "very caudal")
+  } else if (deparse(substitute(x_var)) == "mean") {
+    data_rost <- data %>% filter(mean_label == "very rostral")
+    data_caud <- data %>% filter(mean_label == "very caudal")
+  } else {
+    data_rost <- data %>% filter(median_label == "very rostral")
+    data_caud <- data %>% filter(median_label == "very caudal")
+  }
+
+
+  correlation_result2 <- cor.test(data_rost[[deparse(substitute(x_var))]], data_rost[[deparse(substitute(y_var))]], method = "kendall")
+  correlation_result3 <- cor.test(data_caud[[deparse(substitute(x_var))]], data_caud[[deparse(substitute(y_var))]], method = "kendall")
+
+
+  if (deparse(substitute(x_var)) == "kmeans") {
+    cor_res <- data.frame(method = c("tau", "tau"), p_value = c(correlation_result2$p.value, correlation_result3$p.value), estimate = c(correlation_result2$estimate, correlation_result3$estimate), kmeans_label = c("very rostral", "very caudal"), subregion = c(unique(subregion), unique(subregion)), outcome_type = c(unique(deparse(substitute(y_var))), unique(deparse(substitute(y_var)))), analysis_type = c("k-means clustering", "k-means clustering"))
+  } else if (deparse(substitute(x_var)) == "mean") {
+    cor_res <- data.frame(method = c("tau", "tau"), p_value = c(correlation_result2$p.value, correlation_result3$p.value), estimate = c(correlation_result2$estimate, correlation_result3$estimate), mean_label = c("very rostral", "very caudal"), subregion = c(unique(subregion), unique(subregion)), outcome_type = c(unique(deparse(substitute(y_var))), unique(deparse(substitute(y_var)))), analysis_type = c("mean", "mean"))
+  } else {
+    cor_res <- data.frame(method = c("tau", "tau"), p_value = c(correlation_result2$p.value, correlation_result3$p.value), estimate = c(correlation_result2$estimate, correlation_result3$estimate), median_label = c("very rostral", "very caudal"), subregion = c(unique(subregion), unique(subregion)), outcome_type = c(unique(deparse(substitute(y_var))), unique(deparse(substitute(y_var)))), analysis_type = c("median", "median"))
+  }
+
+  cor_res <- cor_res %>%
+    add_significance("p_value")
+
+
+  write.csv(cor_res, file = paste0("Outputs/Tables/stats_tables/cor_results_", unique(subregion), "_", plot_title, ".csv"))
+
+
+  if (deparse(substitute(x_var)) == "kmeans") {
+    p <- ggplot(data, aes(x = {{ x_var }}, y = {{ y_var }}, shape = {{ plot_shape }}, size = point_size)) +
+      geom_point(aes(color = {{ plot_color }})) +
+      geom_smooth(method = "lm", linewidth = 0.75, aes(color = NULL)) +
+      stat_cor(method = "kendall", cor.coef.name = "tau") +
+      theme(
+        plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 18, hjust = 0.5),
+        axis.title = element_text(size = 18, face = "bold"),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 18, face = "bold"),
+        strip.text = element_text(size = 18, face = "bold"),
+        legend.text = element_text(size = 16),
+        panel.background = element_blank(),
+        panel.grid.major.x = element_line(color = "black"),
+        panel.grid.major.y = element_line(color = "black"),
+        panel.spacing = unit(3, "lines")
+      ) +
+      labs(
+        x = x_label, y = y_label,
+        title = plot_title,
+        subtitle = ifelse(
+          calculate_correlation,
+          paste(
+            str_to_title(correlation_method), "=", round(correlation_result$estimate, 2),
+            "p-value =", signif(correlation_result$p.value, digits = 3)
+          ),
+          NULL
+        )
+      ) +
+      scale_color_discrete(name = color_label) +
+      scale_shape_discrete(name = shape_label) +
+      guides(size = "none") +
+      facet_row(~kmeans_label, space = "fixed", scales = "fixed")
+
+    ggsave(plot = p, filename = paste(tolower(plot_title), "_", correlation_method, "_all_cohorts_map_based_separation_091121_not_removed_kmeans_based.png"), device = "png", width = 8, height = 8, units = "in", dpi = 600, bg = "white", path = "Outputs/Plots/exploratory_plots/")
+  } else if (deparse(substitute(x_var)) == "mean") {
+    p <- ggplot(data, aes(x = {{ x_var }}, y = {{ y_var }}, shape = {{ plot_shape }}, size = point_size)) +
+      geom_point(aes(color = {{ plot_color }})) +
+      geom_smooth(method = "lm", linewidth = 0.75, aes(color = NULL)) +
+      stat_cor(method = "kendall", cor.coef.name = "tau") +
+      theme(
+        plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 18, hjust = 0.5),
+        axis.title = element_text(size = 18, face = "bold"),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 18, face = "bold"),
+        strip.text = element_text(size = 18, face = "bold"),
+        legend.text = element_text(size = 16),
+        panel.background = element_blank(),
+        panel.grid.major.x = element_line(color = "black"),
+        panel.grid.major.y = element_line(color = "black"),
+        panel.spacing = unit(3, "lines")
+      ) +
+      labs(
+        x = x_label, y = y_label,
+        title = plot_title,
+        subtitle = ifelse(
+          calculate_correlation,
+          paste(
+            str_to_title(correlation_method), "=", round(correlation_result$estimate, 2),
+            "p-value =", signif(correlation_result$p.value, digits = 3)
+          ),
+          NULL
+        )
+      ) +
+      scale_color_discrete(name = color_label) +
+      scale_shape_discrete(name = shape_label) +
+      guides(size = "none") +
+      facet_row(~mean_label, space = "fixed", scales = "fixed")
+
+    ggsave(plot = p, filename = paste(tolower(plot_title), "_", correlation_method, "_all_cohorts_map_based_separation_091121_not_removed_mean_based.png"), device = "png", width = 8, height = 8, units = "in", dpi = 600, bg = "white", path = "Outputs/Plots/exploratory_plots/")
+  } else {
+    p <- ggplot(data, aes(x = {{ x_var }}, y = {{ y_var }}, shape = {{ plot_shape }}, size = point_size)) +
+      geom_point(aes(color = {{ plot_color }})) +
+      geom_smooth(method = "lm", linewidth = 0.75, aes(color = NULL)) +
+      stat_cor(method = "kendall", cor.coef.name = "tau") +
+      theme(
+        plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 18, hjust = 0.5),
+        axis.title = element_text(size = 18, face = "bold"),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 18, face = "bold"),
+        strip.text = element_text(size = 18, face = "bold"),
+        legend.text = element_text(size = 16),
+        panel.background = element_blank(),
+        panel.grid.major.x = element_line(color = "black"),
+        panel.grid.major.y = element_line(color = "black"),
+        panel.spacing = unit(3, "lines")
+      ) +
+      labs(
+        x = x_label, y = y_label,
+        title = plot_title,
+        subtitle = ifelse(
+          calculate_correlation,
+          paste(
+            str_to_title(correlation_method), "=", round(correlation_result$estimate, 2),
+            "p-value =", signif(correlation_result$p.value, digits = 3)
+          ),
+          NULL
+        )
+      ) +
+      scale_color_discrete(name = color_label) +
+      scale_shape_discrete(name = shape_label) +
+      guides(size = "none") +
+      facet_row(~median_label, space = "fixed", scales = "fixed")
+
+    ggsave(plot = p, filename = paste(tolower(plot_title), "_", correlation_method, "_all_cohorts_map_based_separation_091121_not_removed_median_based.png"), device = "png", width = 8, height = 8, units = "in", dpi = 600, bg = "white", path = "~/Desktop")
+  }
+}
+
+
+processed_dataframe <- processed_dataframe %>%
+  filter(subregion != "ssp_m") %>%
+  filter(subregion != "ssp_tr")
+
+
+# For loop to step through all subregions
+for (s in unique(processed_dataframe$subregion)) {
+  all_processed_dfs_filtered_subregion <- processed_dataframe %>% filter(subregion == s)
+
+  plot_correlation_by_subregion(
+    data = all_processed_dfs_filtered_subregion,
+    x_var = mean,
+    y_var = average_errors,
+    calculate_correlation = TRUE,
+    correlation_method = "spearman",
+    plot_color = cohort,
+    plot_shape = NULL,
+    subregion = all_processed_dfs_filtered_subregion$subregion
+  )
+}
+
+# Heatmap for global mean calcuation
+test_mat <- matrix(data = 0, nrow = 2, ncol = 6, dimnames = list(c("very rostral", "very caudal"), c("SSp-bfd", "SSp-un", "SSp-ul", "SSp-n", "SSp-ll", "SSs")))
+
+cor_outcome_mat <- matrix(data = 0, nrow = 2, ncol = 6, dimnames = list(c("very rostral", "very caudal"), c("SSp-bfd", "SSp-un", "SSp-ul", "SSp-n", "SSp-ll", "SSs")))
+
+cor_outcome_sig_mat <- matrix(data = 0, nrow = 2, ncol = 6, dimnames = list(c("very rostral", "very caudal"), c("SSp-bfd", "SSp-un", "SSp-ul", "SSp-n", "SSp-ll", "SSs")))
+
+comparisons <- list()
+
+
+# Generate possible combinations for pairwise comparisons later
+for (c in colnames(test_mat)) {
+  for (r in rownames(test_mat)) {
+    comparisons[[paste0(r, "_", c)]] <- paste0(r, "_", c)
+  }
+}
+
+# Change line to access write folder
+all_files <- list.files(path = "Outputs/Tables/stats_tables/global_mean/", pattern = "By Average Errors")
+files_list <- list()
+for (f in all_files) {
+  current_file <- read.csv(file = paste0("Outputs/Tables/stats_tables/global_mean/", f), row.names = 1)
+  files_list[[f]] <- current_file
+}
+
+cor_estimates <- bind_rows(files_list)
+cor_estimates <- cor_estimates %>%
+  select(-method) %>%
+  mutate(row_name = paste(subregion, mean_label, sep = "_"))
+
+# Now moving our finished calculation matrix into our heatmap matrix
+for (s in unique(cor_estimates$subregion)) {
+  current_sub <- filter(cor_estimates, subregion == s)
+  for (l in current_sub$mean_label) {
+    current_brain_region <- filter(current_sub, mean_label == l)
+    test_mat[l, s] <- -1
+    cor_outcome_mat[l, s] <- -1
+    cor_outcome_sig_mat[l, s] <- "ns"
+  }
+}
+
+outcome_type <- unique(cor_estimates$outcome_type)
+outcome_type <- outcome_type %>%
+  gsub(pattern = "_", replacement = " ", x = .) %>%
+  str_to_title(.)
+
+analysis_type <- unique(cor_estimates$analysis_type)
+analysis_type <- analysis_type %>%
+  str_to_title(.)
+
+
+
+
+p1 <- Heatmap( 
+  matrix = test_mat, show_heatmap_legend = FALSE,
+  heatmap_legend_param = list(
+    title = expression(bold("Kendall's " * Tau)),
+    title_gp = gpar(
+      fontsize = 16,
+      fontface = "bold"
+    ),
+    direction = "horizontal",
+    title_position = "topcenter",
+    width = unit(0.8, "snpc"),
+    height = unit(0.4, "snpc"),
+    labels_gp = gpar(fontsize = 14, fontface = "bold")
+  ),
+  cluster_rows = FALSE,
+  cluster_columns = FALSE,
+  column_names_centered = TRUE,
+  column_names_side = "bottom",
+  column_names_rot = 45,
+  column_order = c("SSp-bfd", "SSp-un", "SSp-ul", "SSp-n", "SSp-ll", "SSs"),
+  row_order = c("very rostral", "very caudal"),
+  row_title_gp = gpar(fontsize = 20, fontface = "bold"),
+  row_names_gp = gpar(fontsize = 16, fontface = "bold"),
+  row_names_side = "left",
+  col = "black",
+  na_col = "black", 
+  column_names_gp = gpar(
+    fontsize = 16,
+    fontface = "bold"
+  ),
+  column_title = paste0("Global Mean\n", outcome_type),
+  column_title_gp = gpar(fontsize = 22, fontface = "bold"),
+  cell_fun = function(j, i, x, y, width, height, fill) {
+    # Now get the p-value for the current cell
+    current_p_value <- cor_estimates$p_value[i]
+
+    # Check if the p-value is less than 0.05 and not NA
+    if (cor_outcome_mat[i, j] < 0.05 && !is.na(cor_outcome_mat[i, j])) {
+      # Define the text to display based on significance
+      sig_text <- cor_outcome_sig_mat[i, j]
+      # Add the text to the heatmap cell
+      grid.text(sig_text, x, y, gp = gpar(fontsize = 16, col = "black"))
+    }
+  },
+  rect_gp = gpar(color = "white")
+)
+
+p1 <- p1 %>%
+  draw(heatmap_legend_side = "bottom")
+
+```
+
+
+# Saving the finished heatmaps
+```{r saving finished heatmaps}
+# PNG file format
+png(file = paste0("Outputs/Plots/finished_plots/complex_heatmap_combined_cohorts_by_subregion_global_mean", outcome_type, ".png"), units = "in", width = 6, height = 6, res = 600)
+p1 <- draw(p1, height = unit(1, "cm") * 6)
+draw(p1, height = unit(1, "cm") * 6)
+dev.off()
+
+
+# SVG file format
+svg(file = paste0("Outputs/Plots/finished_plots/complex_heatmap_combined_cohorts_by_subregion_global_mean", outcome_type, ".svg"), width = 6, height = 6)
+p1 <- draw(p1, height = unit(1, "cm") * 6)
+draw(p1, height = unit(1, "cm") * 6)
+dev.off()
+
+```
+
+
+# Plot for using our various labels to see if it is correlated with average latency or average errors
+```{r kmeans label by latency plot}
+# Keep dataframes with > 4 columns
+processed_dataframes <- keep(processed_dataframes, function(df) {
+  ncol(df) > 4
+})
+
+all_processed_dfs <- bind_rows(processed_dataframes)
+all_processed_dfs_filtered <- filter(all_processed_dfs, kmeans < 10)
+
+
+# Function to plot and calculate correlations for all cohorts within a subregion
+plot_correlation_by_subregion <- function(data, x_var, y_var, calculate_correlation = TRUE, correlation_method = "spearman", plot_color = cohort, plot_shape = kmeans_label, point_size = 2, x_label, y_label, plot_title, subregion = NULL) {
+  if (calculate_correlation) {
+    if (is.character(data[[deparse(substitute(x_var))]])) {
+      # Convert character to numeric by scaling categories
+      data[[deparse(substitute(x_var))]] <- as.numeric(factor(data[[deparse(substitute(x_var))]]))
+    }
+    if (is.character(data[[deparse(substitute(y_var))]])) {
+      # Convert character to numeric by scaling categories
+      data[[deparse(substitute(y_var))]] <- as.numeric(factor(data[[deparse(substitute(y_var))]]))
+    }
+
+    correlation_result <- cor.test(data[[deparse(substitute(x_var))]], data[[deparse(substitute(y_var))]], method = correlation_method)
+  }
+
+  # Formatting the relevant label titles from the data input
+  color_label <- str_to_title(deparse(substitute(plot_color)))
+  shape_label <- str_to_title(deparse(substitute(plot_shape)))
+  color_label <- gsub(x = color_label, pattern = "_", replacement = " ")
+  shape_label <- gsub(x = shape_label, pattern = "_", replacement = " ")
+  if (deparse(substitute(x_var)) == "kmeans") {
+    x_label <- "Average Reduction (K-means)"
+  } else {
+    x_label <- str_to_title(paste("Average Reduction (", deparse(substitute(x_var)), ")"))
+  }
+
+  # Formatting subregion text for plot title
+  if (!is.null(deparse(substitute(subregion)))) {
+    subregion <- unique(data$subregion)
+    if (subregion != "ss_s") {
+      # Split the string at "_" and capitalize both "ss"
+      split_string <- strsplit(subregion, "_")[[1]]
+      split_string <- gsub("ss", "SS", split_string, fixed = TRUE)
+
+      # Join the split string with "-"
+      formatted_string <- paste(split_string, collapse = "-")
+
+      subregion <- formatted_string
+    } else {
+      subregion <- "SSs"
+    }
+  } else {
+    subregion <- NULL
+  }
+
+  y_label <- str_to_title(deparse(substitute(y_var)))
+  y_label <- gsub(x = y_label, pattern = "_", replacement = " ")
+  plot_title <- noquote(str_to_title(paste(x_label, "by", y_label, " | \n", subregion)))
+
+  # Calculating the additional correlation data for the faceted variable (kmeans_label)
+  if (deparse(substitute(x_var)) == "kmeans") {
+    data_rost <- data %>% filter(kmeans_label == "very rostral")
+    data_caud <- data %>% filter(kmeans_label == "very caudal")
+  } else if (deparse(substitute(x_var)) == "mean") {
+    data_rost <- data %>% filter(mean_label == "very rostral")
+    data_caud <- data %>% filter(mean_label == "very caudal")
+  } else {
+    data_rost <- data %>% filter(median_label == "very rostral")
+    data_caud <- data %>% filter(median_label == "very caudal")
+  }
+
+
+  correlation_result2 <- cor.test(data_rost[[deparse(substitute(x_var))]], data_rost[[deparse(substitute(y_var))]], method = "kendall")
+  correlation_result3 <- cor.test(data_caud[[deparse(substitute(x_var))]], data_caud[[deparse(substitute(y_var))]], method = "kendall")
+
+
+  if (deparse(substitute(x_var)) == "kmeans") {
+    cor_res <- data.frame(method = c("tau", "tau"), p_value = c(correlation_result2$p.value, correlation_result3$p.value), estimate = c(correlation_result2$estimate, correlation_result3$estimate), kmeans_label = c("very rostral", "very caudal"), subregion = c(unique(subregion), unique(subregion)), outcome_type = c(unique(deparse(substitute(y_var))), unique(deparse(substitute(y_var)))), analysis_type = c("k-means clustering", "k-means clustering"))
+  } else if (deparse(substitute(x_var)) == "mean") {
+    cor_res <- data.frame(method = c("tau", "tau"), p_value = c(correlation_result2$p.value, correlation_result3$p.value), estimate = c(correlation_result2$estimate, correlation_result3$estimate), mean_label = c("very rostral", "very caudal"), subregion = c(unique(subregion), unique(subregion)), outcome_type = c(unique(deparse(substitute(y_var))), unique(deparse(substitute(y_var)))), analysis_type = c("mean", "mean"))
+  } else {
+    cor_res <- data.frame(method = c("tau", "tau"), p_value = c(correlation_result2$p.value, correlation_result3$p.value), estimate = c(correlation_result2$estimate, correlation_result3$estimate), median_label = c("very rostral", "very caudal"), subregion = c(unique(subregion), unique(subregion)), outcome_type = c(unique(deparse(substitute(y_var))), unique(deparse(substitute(y_var)))), analysis_type = c("median", "median"))
+  }
+
+  cor_res <- cor_res %>%
+    add_significance("p_value")
+
+
+  write.csv(cor_res, file = paste0("Outputs/Tables/stats_tables/cor_results_", unique(subregion), "_", plot_title, ".csv"))
+
+
+  if (deparse(substitute(x_var)) == "kmeans") {
+    p <- ggplot(data, aes(x = {{ x_var }}, y = {{ y_var }}, shape = {{ plot_shape }}, size = point_size)) +
+      geom_point(aes(color = {{ plot_color }})) +
+      geom_smooth(method = "lm", linewidth = 0.75, aes(color = NULL)) +
+      stat_cor(method = "kendall", cor.coef.name = "tau") +
+      theme(
+        plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 18, hjust = 0.5),
+        axis.title = element_text(size = 18, face = "bold"),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 18, face = "bold"),
+        strip.text = element_text(size = 18, face = "bold"),
+        legend.text = element_text(size = 16),
+        panel.background = element_blank(),
+        panel.grid.major.x = element_line(color = "black"),
+        panel.grid.major.y = element_line(color = "black"),
+        panel.spacing = unit(3, "lines")
+      ) +
+      labs(
+        x = x_label, y = y_label,
+        title = plot_title,
+        subtitle = ifelse(
+          calculate_correlation,
+          paste(
+            str_to_title(correlation_method), "=", round(correlation_result$estimate, 2),
+            "p-value =", signif(correlation_result$p.value, digits = 3)
+          ),
+          NULL
+        )
+      ) +
+      scale_color_discrete(name = color_label) +
+      scale_shape_discrete(name = shape_label) +
+      guides(size = "none") +
+      facet_row(~kmeans_label, space = "fixed", scales = "fixed")
+
+    ggsave(plot = p, filename = paste(tolower(plot_title), "_", correlation_method, "_all_cohorts_map_based_separation_091121_not_removed_kmeans_based.png"), device = "png", width = 8, height = 8, units = "in", dpi = 600, bg = "white", path = "Outputs/Plots/exploratory_plots/")
+  } else if (deparse(substitute(x_var)) == "mean") {
+    p <- ggplot(data, aes(x = {{ x_var }}, y = {{ y_var }}, shape = {{ plot_shape }}, size = point_size)) +
+      geom_point(aes(color = {{ plot_color }})) +
+      geom_smooth(method = "lm", linewidth = 0.75, aes(color = NULL)) +
+      stat_cor(method = "kendall", cor.coef.name = "tau") +
+      theme(
+        plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 18, hjust = 0.5),
+        axis.title = element_text(size = 18, face = "bold"),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 18, face = "bold"),
+        strip.text = element_text(size = 18, face = "bold"),
+        legend.text = element_text(size = 16),
+        panel.background = element_blank(),
+        panel.grid.major.x = element_line(color = "black"),
+        panel.grid.major.y = element_line(color = "black"),
+        panel.spacing = unit(3, "lines")
+      ) +
+      labs(
+        x = x_label, y = y_label,
+        title = plot_title,
+        subtitle = ifelse(
+          calculate_correlation,
+          paste(
+            str_to_title(correlation_method), "=", round(correlation_result$estimate, 2),
+            "p-value =", signif(correlation_result$p.value, digits = 3)
+          ),
+          NULL
+        )
+      ) +
+      scale_color_discrete(name = color_label) +
+      scale_shape_discrete(name = shape_label) +
+      guides(size = "none") +
+      facet_row(~mean_label, space = "fixed", scales = "fixed")
+
+    ggsave(plot = p, filename = paste(tolower(plot_title), "_", correlation_method, "_all_cohorts_map_based_separation_091121_not_removed_mean_based.png"), device = "png", width = 8, height = 8, units = "in", dpi = 600, bg = "white", path = "Outputs/Plots/exploratory_plots/")
+  } else {
+    p <- ggplot(data, aes(x = {{ x_var }}, y = {{ y_var }}, shape = {{ plot_shape }}, size = point_size)) +
+      geom_point(aes(color = {{ plot_color }})) +
+      geom_smooth(method = "lm", linewidth = 0.75, aes(color = NULL)) +
+      stat_cor(method = "kendall", cor.coef.name = "tau") +
+      theme(
+        plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
+        plot.subtitle = element_text(size = 18, hjust = 0.5),
+        axis.title = element_text(size = 18, face = "bold"),
+        axis.text = element_text(size = 16),
+        legend.title = element_text(size = 18, face = "bold"),
+        strip.text = element_text(size = 18, face = "bold"),
+        legend.text = element_text(size = 16),
+        panel.background = element_blank(),
+        panel.grid.major.x = element_line(color = "black"),
+        panel.grid.major.y = element_line(color = "black"),
+        panel.spacing = unit(3, "lines")
+      ) +
+      labs(
+        x = x_label, y = y_label,
+        title = plot_title,
+        subtitle = ifelse(
+          calculate_correlation,
+          paste(
+            str_to_title(correlation_method), "=", round(correlation_result$estimate, 2),
+            "p-value =", signif(correlation_result$p.value, digits = 3)
+          ),
+          NULL
+        )
+      ) +
+      scale_color_discrete(name = color_label) +
+      scale_shape_discrete(name = shape_label) +
+      guides(size = "none") +
+      facet_row(~median_label, space = "fixed", scales = "fixed")
+
+    ggsave(plot = p, filename = paste(tolower(plot_title), "_", correlation_method, "_all_cohorts_map_based_separation_091121_not_removed_median_based.png"), device = "png", width = 8, height = 8, units = "in", dpi = 600, bg = "white", path = "Outputs/Plots/exploratory_plots/")
+  }
+}
+
+
+
+# For loop to step through all subregions
+for (s in unique(all_processed_dfs_filtered$subregion)) {
+  all_processed_dfs_filtered_subregion <- all_processed_dfs_filtered %>% filter(subregion == s)
+  # all_processed_dfs_filtered_subregion <- all_processed_dfs_filtered %>% filter(subregion == s & cohort != "#091121")
+
+  plot_correlation_by_subregion(
+    data = all_processed_dfs_filtered_subregion,
+    x_var = median,
+    y_var = average_errors,
+    calculate_correlation = TRUE,
+    correlation_method = "spearman",
+    plot_color = cohort,
+    plot_shape = NULL,
+    subregion = all_processed_dfs_filtered_subregion$subregion
+  )
+}
+```
+
+
+# Making heatmaps to visualize all cohorts correlation per subregion faceted by very rostral or very caudal brain map location (based on k-means clustering)
+```{r heatmap kmeans}
+test_mat <- matrix(data = 0, nrow = 2, ncol = 8, dimnames = list(c("very rostral", "very caudal"), c("SSp-bfd", "SSp-un", "SSp-ul", "SSp-tr", "SSp-n", "SSp-m", "SSp-ll", "SSs")))
+
+cor_outcome_mat <- matrix(data = 0, nrow = 2, ncol = 8, dimnames = list(c("very rostral", "very caudal"), c("SSp-bfd", "SSp-un", "SSp-ul", "SSp-tr", "SSp-n", "SSp-m", "SSp-ll", "SSs")))
+
+cor_outcome_sig_mat <- matrix(data = 0, nrow = 2, ncol = 8, dimnames = list(c("very rostral", "very caudal"), c("SSp-bfd", "SSp-un", "SSp-ul", "SSp-tr", "SSp-n", "SSp-m", "SSp-ll", "SSs")))
+
+comparisons <- list()
+
+
+# Generate possible combinations for pairwise comparisons later
+for (c in colnames(test_mat)) {
+  for (r in rownames(test_mat)) {
+    comparisons[[paste0(r, "_", c)]] <- paste0(r, "_", c)
+  }
+}
+
+# Change line to access write folder
+all_files <- list.files(path = "Outputs/Tables/stats_tables/kmeans/", pattern = "By Average Errors")
+files_list <- list()
+for (f in all_files) {
+  current_file <- read.csv(file = paste0("Outputs/Tables/stats_tables/kmeans/", f), row.names = 1)
+  files_list[[f]] <- current_file
+}
+
+cor_estimates <- bind_rows(files_list)
+cor_estimates <- cor_estimates %>%
+  select(-method) %>%
+  mutate(row_name = paste(subregion, kmeans_label, sep = "_"))
+
+# Now moving our finished calculation matrix into our heatmap matrix
+for (s in unique(cor_estimates$subregion)) {
+  current_sub <- filter(cor_estimates, subregion == s)
+  for (l in current_sub$kmeans_label) {
+    current_brain_region <- filter(current_sub, kmeans_label == l)
+    test_mat[l, s] <- current_brain_region$estimate
+    cor_outcome_mat[l, s] <- current_brain_region$p_value
+    cor_outcome_sig_mat[l, s] <- current_brain_region$p_value.signif
+  }
+}
+
+outcome_type <- unique(cor_estimates$outcome_type)
+outcome_type <- outcome_type %>%
+  gsub(pattern = "_", replacement = " ", x = .) %>%
+  str_to_title(.)
+
+analysis_type <- unique(cor_estimates$analysis_type)
+analysis_type <- analysis_type %>%
+  str_to_title(.)
+
+p1 <- Heatmap(
+  matrix = test_mat, show_heatmap_legend = TRUE,
+  heatmap_legend_param = list(
+    title = expression(bold("Kendall's " * Tau)),
+    title_gp = gpar(
+      fontsize = 16,
+      fontface = "bold"
+    ),
+    direction = "horizontal",
+    title_position = "topcenter",
+    width = unit(0.8, "snpc"),
+    height = unit(0.4, "snpc"),
+    labels_gp = gpar(fontsize = 14, fontface = "bold")
+  ),
+  col = c("blue", "white", "red"),
+  cluster_rows = FALSE,
+  cluster_columns = FALSE,
+  column_names_centered = TRUE,
+  column_names_side = "bottom",
+  column_names_rot = 45,
+  column_order = c("SSp-bfd", "SSp-un", "SSp-ul", "SSp-tr", "SSp-n", "SSp-m", "SSp-ll", "SSs"),
+  row_order = c("very rostral", "very caudal"),
+  row_title_gp = gpar(fontsize = 20, fontface = "bold"),
+  row_names_gp = gpar(fontsize = 16, fontface = "bold"),
+  row_names_side = "left",
+  na_col = "black", column_names_gp = gpar(
+    fontsize = 16,
+    fontface = "bold"
+  ),
+  column_title = paste0(analysis_type, "\n", outcome_type),
+  column_title_gp = gpar(fontsize = 22, fontface = "bold"),
+  cell_fun = function(j, i, x, y, width, height, fill) {
+    # Now get the p-value for the current cell
+    current_p_value <- cor_estimates$p_value[i]
+
+    # Check if the p-value is less than 0.05 and not NA
+    if (cor_outcome_mat[i, j] < 0.05 && !is.na(cor_outcome_mat[i, j])) {
+      # Define the text to display based on significance
+      sig_text <- cor_outcome_sig_mat[i, j]
+      # Add the text to the heatmap cell
+      grid.text(sig_text, x, y, gp = gpar(fontsize = 16, col = "black"))
+    }
+  },
+  rect_gp = gpar(color = "black")
+)
+
+p1 <- p1 %>%
+  draw(heatmap_legend_side = "bottom")
+```
+
+
+# Saving the finished heatmaps
+```{r saving finished heatmaps}
+# PNG file format
+png(file = paste0("Outputs/Plots/finished_plots/complex_heatmap_combined_cohorts_by_subregion_", analysis_type, "_", outcome_type, ".png"), units = "in", width = 6, height = 6, res = 600)
+p1 <- draw(p1, height = unit(1, "cm") * 6)
+draw(p1, height = unit(1, "cm") * 6)
+dev.off()
+
+
+# SVG file format
+svg(file = paste0("Outputs/Plots/finished_plots/complex_heatmap_combined_cohorts_by_subregion_", analysis_type, "_", outcome_type, ".svg"), width = 6, height = 6)
+p1 <- draw(p1, height = unit(1, "cm") * 6)
+draw(p1, height = unit(1, "cm") * 6)
+dev.off()
+```
+# All subregion and cohorts together for a single correlation faceted by rostral or caudal location
+```{r all cohorts and subregions together}
+# Functions to calculate very rostral and very caudal labels from all subregions and cohorts together in one dataframe
+# Function to extract relevant data to get ready for model format
+extract_columns <- function(data, file_name = "ssp_bfd") {
+  # Initialize an empty list to store the extracted columns
+  extracted_columns <- list()
+
+  # Extract the subregion used by regex for later incorporation
+  if (file_name != "Data/chabc_ss_s.csv") {
+    subregion_name <- sub(".*/(chabc_ssp_[^./]+)\\.csv", "\\1", file_name)
+    subregion_name <- sub("chabc_", "", subregion_name)
+  } else {
+    subregion_name <- "ss_s"
+  }
+
+
+  # Loop through the columns in the dataframe
+  for (i in seq(1, ncol(data), by = 2)) {
+    # Extract the column names in each set of two
+    column_set <- data[, i:min(i + 1, ncol(data))]
+    name_to_use <- names(column_set)[1]
+    colnames(column_set) <- column_set[1, ]
+
+
+    # Add the extracted column set to the list
+    column_set$cohort <- rep(name_to_use, times = nrow(column_set))
+    extracted_columns[[name_to_use]] <- column_set
+  }
+
+  extracted_df <- bind_rows(extracted_columns)
+  extracted_df$subregion <- rep(subregion_name, times = nrow(extracted_df))
+  colnames(extracted_df) <- tolower(colnames(extracted_df))
+  extracted_df <- extracted_df[complete.cases(extracted_df), ]
+  extracted_df <- filter(extracted_df, map != "Map")
+
+  # Return the extracted dataframe
+  return(extracted_df)
+}
+
+# Function to check if all reduction values are the same (k-means will fail in this case)
+# Check if all values in the dataframe are the same
+check_unique_value <- function(df) {
+  unique_values <- unique(unlist(df))
+  num_unique <- length(unique_values)
+  if (num_unique == 1) {
+    return(TRUE) # All values are the same
+  } else {
+    return(FALSE) # Data contains more than one unique value
+  }
+}
+
+pred_files <- list.files(path = "Data/", pattern = "chabc_")
+all_subs <- list()
+for (f in pred_files) {
+  current_sub <- read_csv(paste0("Data/", f))
+  current_sub <- select(current_sub, 1:26)
+  current_sub <- extract_columns(current_sub, file_name = paste0("Data/", f))
+  all_subs[[f]] <- current_sub
+}
+
+# Binding all of them together
+all_sub_df <- bind_rows(all_subs)
+
+# Renaming % reduction column to reduction to make it easier to put in model formula
+colnames(all_sub_df)[2] <- "reduction"
+
+
+
+# Read the data
+behavior_errors <- read.csv("Data/behavior_errors.csv", row.names = 1)
+behavior_latency <- read.csv("Data/behavior_latency.csv", row.names = 1)
+
+# Calculate overall average errors
+avg_errors <- behavior_errors %>%
+  unlist() %>%
+  mean(na.rm = TRUE) %>%
+  data.frame(Cohort = .)
+
+
+# Calculate overall average latency
+avg_latency <- behavior_latency %>%
+  unlist() %>%
+  mean(na.rm = TRUE) %>%
+  data.frame(Cohort = .)
+
+
+
+process_dataframe_map_all_subs <- function(df, errors_summary = NULL, latency_summary = NULL, k = 2, print_results = TRUE, plot_silhouette = TRUE) {
+  # Clustering Approach (K-means)
+  k <- k
+  if (!check_unique_value(matrix(df$reduction))) {
+    # Mean Approach
+    df <- df %>%
+      mutate(mean_label = if_else(map <= mean(as.numeric(map)), "very rostral", "very caudal"))
+
+    mean_value <- mean(as.numeric(df$map))
+    less_mean <- df$map <= mean_value
+    more_mean <- df$map > mean_value
+
+
+    # Median Approach
+    df <- df %>%
+      mutate(median_label = if_else(map <= median(as.numeric(map)), "very rostral", "very caudal"))
+
+    median_value <- median(as.numeric(df$map))
+    less_median <- df$map <= median_value
+    more_median <- df$map > median_value
+
+    clustering <- kmeans(matrix(df$map), centers = k)
+    cluster_centers <- clustering$centers
+    less_cluster <- df$map <= min(cluster_centers)
+    more_cluster <- df$map > min(cluster_centers)
+
+    df <- df %>%
+      mutate(kmeans_label = if_else(map <= min(clustering$centers), "very rostral", "very caudal"))
+
+    # Calculate silhouette scores
+    silhouette_scores <- silhouette(clustering$cluster, dist(df$map))
+
+    # Plot silhouette scores (optional)
+    if (plot_silhouette) {
+      png(filename = paste0("Outputs/Plots/silhouette_plots/silhouette_plot_", nrow(cluster_centers), "_clusters_subregion_", unique(df$subregion), "_", unique(df$cohort), "_cohort_map.png"), width = 8, height = 8, units = "in", res = 600, bg = "white")
+      plot(silhouette_scores, main = paste0(" K-means Clustering | Clusters:  ", nrow(cluster_centers), " | ", str_to_title(unique(df$subregion)), " | ", str_to_title(unique(df$cohort))), col = "skyblue")
+      dev.off()
+    }
+
+
+    # Print the results (optional)
+    if (print_results) {
+      cat("Mean Approach:\n")
+      cat("Less:", df$map[less_mean], "\n")
+      cat("More:", df$map[more_mean], "\n")
+
+      cat("Median Approach:\n")
+      cat("Less:", df$map[less_median], "\n")
+      cat("More:", df$map[more_median], "\n")
+
+      cat("Clustering Approach (K-means):\n")
+      cat("Less:", df$map[less_cluster], "\n")
+      cat("More:", df$map[more_cluster], "\n\n")
+    }
+
+    # Now getting average reduction by kmeans_label
+    # Calculate the average reduction for each kmeans_label group
+    average_reduction_kmeans <- df %>%
+      filter(!is.na(map) & !is.na(as.numeric(map))) %>%
+      group_by(kmeans_label) %>%
+      mutate(reduction = as.numeric(reduction)) %>%
+      summarize(average_reduction_kmeans = mean(reduction, na.rm = TRUE))
+
+    # Join this average reduction back to the original data frame
+    df <- df %>%
+      left_join(average_reduction_kmeans, by = "kmeans_label") %>%
+      rename(kmeans = average_reduction_kmeans)
+
+    # Now getting average reduction by mean_label
+    average_reduction_mean <- df %>%
+      group_by(mean_label) %>%
+      mutate(reduction = as.numeric(reduction)) %>%
+      summarize(average_reduction_mean = mean(reduction, na.rm = TRUE))
+
+
+    # Now getting average reduction by median_label
+    average_reduction_median <- df %>%
+      group_by(median_label) %>%
+      mutate(reduction = as.numeric(reduction)) %>%
+      summarize(average_reduction_median = mean(reduction, na.rm = TRUE))
+
+    # Join this average reduction back to the original data frame
+    df <- df %>%
+      left_join(average_reduction_mean, by = "mean_label") %>%
+      rename(mean = average_reduction_mean)
+
+    # Join this average reduction back to the original data frame
+    df <- df %>%
+      left_join(average_reduction_median, by = "median_label") %>%
+      rename(median = average_reduction_median)
+
+    # Joining the errors and latency summaries by Cohort
+    df <- df %>%
+      mutate(
+        average_errors = rep(errors_summary, nrow(df)),
+        average_latency = rep(latency_summary, nrow(df))
+      )
+
+    df <- df %>%
+      mutate(
+        average_errors = as.numeric(average_errors),
+        average_latency = as.numeric(average_latency)
+      )
+  }
+
+  # Return the processed dataframe
+  return(df)
+}
+
+
+# Generating the labels
+processed_dataframe <- process_dataframe_map_all_subs(all_sub_df, errors_summary = avg_errors, latency_summary = avg_latency, k = 2, print_results = FALSE, plot_silhouette = FALSE)
+
+# Processing of finished dataframe
+processed_dataframe_filtered <- filter(processed_dataframe, kmeans < 10)
+
+
+plot_correlation_all_subregions <- function(data, x_var, y_var, calculate_correlation = TRUE, correlation_method = "spearman", plot_color = cohort, plot_shape = kmeans_label, point_size = 2, x_label, y_label, plot_title, subregion = NULL) {
+  if (calculate_correlation) {
+    if (is.character(data[[deparse(substitute(x_var))]])) {
+      # Convert character to numeric by scaling categories
+      data[[deparse(substitute(x_var))]] <- as.numeric(factor(data[[deparse(substitute(x_var))]]))
+    }
+    if (is.character(data[[deparse(substitute(y_var))]])) {
+      # Convert character to numeric by scaling categories
+      data[[deparse(substitute(y_var))]] <- as.numeric(factor(data[[deparse(substitute(y_var))]]))
+    }
+    correlation_result <- cor.test(data[[deparse(substitute(x_var))]], data[[deparse(substitute(y_var))]], method = correlation_method)
+  }
+
+  # Formatting the relevant label titles from the data input
+  color_label <- str_to_title(deparse(substitute(plot_color)))
+  shape_label <- str_to_title(deparse(substitute(plot_shape)))
+  color_label <- gsub(x = color_label, pattern = "_", replacement = " ")
+  shape_label <- gsub(x = shape_label, pattern = "_", replacement = " ")
+
+  if (deparse(substitute(x_var)) == "kmeans") {
+    x_label <- "Average Reduction (K-means)"
+  } else {
+    x_label <- str_to_title(paste("Average Reduction (", deparse(substitute(x_var)), ")"))
+  }
+
+  y_label <- str_to_title(deparse(substitute(y_var)))
+  y_label <- gsub(x = y_label, pattern = "_", replacement = " ")
+
+  plot_title <- noquote(str_to_title(paste(x_label, "by", y_label, " | \n All Subregions")))
+
+  # Calculating the additional correlation data for the faceted variable (kmeans_label)
+  if (deparse(substitute(x_var)) == "kmeans") {
+    data_rost <- data %>% filter(kmeans_label == "very rostral")
+    data_caud <- data %>% filter(kmeans_label == "very caudal")
+  } else if (deparse(substitute(x_var)) == "mean") {
+    data_rost <- data %>% filter(mean_label == "very rostral")
+    data_caud <- data %>% filter(mean_label == "very caudal")
+  } else {
+    data_rost <- data %>% filter(median_label == "very rostral")
+    data_caud <- data %>% filter(median_label == "very caudal")
+  }
+
+
+  correlation_result2 <- cor.test(data_rost[[deparse(substitute(x_var))]], data_rost[[deparse(substitute(y_var))]], method = "kendall")
+  correlation_result3 <- cor.test(data_caud[[deparse(substitute(x_var))]], data_caud[[deparse(substitute(y_var))]], method = "kendall")
+
+  cor_res <- data.frame(
+    method = c("kendall", "kendall"),
+    p_value = c(correlation_result2$p.value, correlation_result3$p.value),
+    estimate = c(correlation_result2$estimate, correlation_result3$estimate),
+    kmeans_label = c("very rostral", "very caudal"),
+    subregion = c("All Subregions", "All Subregions"),
+    outcome_type = c(unique(deparse(substitute(y_var))), unique(deparse(substitute(y_var)))),
+    analysis_type = c(
+      ifelse(deparse(substitute(x_var)) == "kmeans", "k-means clustering", deparse(substitute(x_var))),
+      ifelse(deparse(substitute(x_var)) == "kmeans", "k-means clustering", deparse(substitute(x_var)))
+    )
+  )
+
+  cor_res <- cor_res %>%
+    add_significance("p_value")
+
+  write.csv(cor_res, file = paste0("Outputs/Tables/stats_tables/cor_results_all_subregions_and_all_cohorts_", plot_title, ".csv"))
+
   p <- ggplot(data, aes(x = {{ x_var }}, y = {{ y_var }}, shape = {{ plot_shape }}, size = point_size)) +
     geom_point(aes(color = {{ plot_color }})) +
     geom_smooth(method = "lm", linewidth = 0.75, aes(color = NULL)) +
@@ -545,7 +1441,8 @@ plot_correlation_by_subregion <- function(data, x_var, y_var, calculate_correlat
       legend.text = element_text(size = 16),
       panel.background = element_blank(),
       panel.grid.major.x = element_line(color = "black"),
-      panel.grid.major.y = element_line(color = "black")
+      panel.grid.major.y = element_line(color = "black"),
+      panel.spacing = unit(3, "lines")
     ) +
     labs(
       x = x_label, y = y_label,
@@ -562,23 +1459,21 @@ plot_correlation_by_subregion <- function(data, x_var, y_var, calculate_correlat
     scale_color_discrete(name = color_label) +
     scale_shape_discrete(name = shape_label) +
     guides(size = "none") +
-    facet_row(~kmeans_label, space = "free", scales = "free_x")
+    facet_row(~kmeans_label, space = "fixed", scales = "fixed")
 
-  ggsave(plot = p, filename = paste(tolower(plot_title), "_", correlation_method, "_all_cohorts_map_based_separation.png"), device = "png", width = 8, height = 8, units = "in", dpi = 600, bg = "white", path = "Outputs/Plots/exploratory_plots/")
+  ggsave(plot = p, filename = paste(tolower(plot_title), "_", correlation_method, "_all_cohorts_map_based_separation_091121_not_removed_all_subregions_and_cohorts.png"), device = "png", width = 8, height = 8, units = "in", dpi = 600, bg = "white", path = "Outputs/Plots/finished_plots/")
 }
 
 
-
-all_processed_dfs_filtered_subregion <- all_processed_dfs_filtered %>% filter(subregion == "ssp_bfd")
-
-plot_correlation_by_subregion(
-    data = all_processed_dfs_filtered_subregion,
-    x_var = kmeans,
-    y_var = average_latency,
-    calculate_correlation = TRUE, 
-    correlation_method = "spearman",
-    plot_color = cohort,
-    plot_shape = NULL,
-    subregion = all_processed_dfs_filtered_subregion$subregion
-  )
+# Now running it to see what all cohorts and subregions together look like
+test <- plot_correlation_all_subregions(
+  data = processed_dataframe_filtered,
+  x_var = kmeans,
+  y_var = average_errors,
+  calculate_correlation = TRUE,
+  correlation_method = "spearman",
+  plot_color = cohort,
+  plot_shape = NULL,
+  subregion = NULL
+)
 ```
