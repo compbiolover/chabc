@@ -407,13 +407,43 @@ process_dataframe_map <- function(df, errors_summary = NULL, latency_summary = N
       cat("Less:", df$map[less_mean], "\n")
       cat("More:", df$map[more_mean], "\n")
 
+      max_length <- max(length(less_mean), length(more_mean), nrow(df))
+
+      mean_cutoff_df <- data.frame(
+        mean_cuttof = rep(mean_value, length.out = max_length),
+        map_ids_greater_than_mean = rep(df$map[more_mean], length.out = max_length),
+        map_ids_less_than_mean = rep(df$map[less_mean], length.out = max_length),
+        subregion = rep(df$subregion, length.out = max_length)
+      )
+      write.csv(mean_cutoff_df, file = paste("Outputs/Tables/stats_tables/joseph_files/mean_cutoff_table_", unique(df$subregion), ".csv"))
+
       cat("Median Approach:\n")
       cat("Less:", df$map[less_median], "\n")
       cat("More:", df$map[more_median], "\n")
 
+      max_length <- max(length(less_median), length(more_median), nrow(df))
+
+      median_cutoff_df <- data.frame(
+        median_cuttof = rep(median_value, length.out = max_length),
+        map_ids_greater_than_median = rep(df$map[more_median], length.out = max_length),
+        map_ids_less_than_median = rep(df$map[less_median], length.out = max_length),
+        subregion = rep(df$subregion, length.out = max_length)
+      )
+      write.csv(mean_cutoff_df, file = paste("Outputs/Tables/stats_tables/joseph_files/median_cutoff_table_", unique(df$subregion), ".csv"))
+
       cat("Clustering Approach (K-means):\n")
       cat("Less:", df$map[less_cluster], "\n")
       cat("More:", df$map[more_cluster], "\n\n")
+
+      max_length <- max(length(less_cluster), length(more_cluster), nrow(df))
+
+      kmeans_cutoff_df <- data.frame(
+        kmeans_cuttof = rep(min(clustering$centers), length.out = max_length),
+        map_ids_greater_than_kmeans = rep(df$map[more_cluster], length.out = max_length),
+        map_ids_less_than_kmeans = rep(df$map[less_cluster], length.out = max_length),
+        subregion = rep(df$subregion, length.out = max_length)
+      )
+      write.csv(mean_cutoff_df, file = paste("Outputs/Tables/stats_tables/joseph_files/kmean_cutoff_table_", unique(df$subregion), ".csv"))
     }
 
     # Now getting average reduction by kmeans_label
@@ -464,7 +494,7 @@ process_dataframe_map <- function(df, errors_summary = NULL, latency_summary = N
 
 # Apply the function to each dataframe in the list
 processed_dataframes <- lapply(all_dfs, function(df) {
-  process_dataframe_map(df, errors_summary = df_errors_summary, latency_summary = df_latency_summary, k = 2, print_results = FALSE, plot_silhouette = TRUE)
+  process_dataframe_map(df, errors_summary = df_errors_summary, latency_summary = df_latency_summary, k = 2, print_results = TRUE, plot_silhouette = FALSE)
 })
 
 
@@ -710,7 +740,7 @@ for (c in colnames(test_mat)) {
   }
 }
 
-# Change line to access write folder
+# Change line to access right folder
 all_files <- list.files(path = "Outputs/Tables/stats_tables/global_mean/", pattern = "By Average Errors")
 files_list <- list()
 for (f in all_files) {
@@ -746,7 +776,7 @@ analysis_type <- analysis_type %>%
 
 
 
-p1 <- Heatmap( 
+p1 <- Heatmap(
   matrix = test_mat, show_heatmap_legend = FALSE,
   heatmap_legend_param = list(
     title = expression(bold("Kendall's " * Tau)),
@@ -771,7 +801,7 @@ p1 <- Heatmap(
   row_names_gp = gpar(fontsize = 16, fontface = "bold"),
   row_names_side = "left",
   col = "black",
-  na_col = "black", 
+  na_col = "black",
   column_names_gp = gpar(
     fontsize = 16,
     fontface = "bold"
@@ -795,11 +825,10 @@ p1 <- Heatmap(
 
 p1 <- p1 %>%
   draw(heatmap_legend_side = "bottom")
-
 ```
 
 
-# Saving the finished heatmaps
+# Saving the finished heatmaps for global mean calculation
 ```{r saving finished heatmaps}
 # PNG file format
 png(file = paste0("Outputs/Plots/finished_plots/complex_heatmap_combined_cohorts_by_subregion_global_mean", outcome_type, ".png"), units = "in", width = 6, height = 6, res = 600)
@@ -813,7 +842,6 @@ svg(file = paste0("Outputs/Plots/finished_plots/complex_heatmap_combined_cohorts
 p1 <- draw(p1, height = unit(1, "cm") * 6)
 draw(p1, height = unit(1, "cm") * 6)
 dev.off()
-
 ```
 
 
@@ -877,7 +905,7 @@ plot_correlation_by_subregion <- function(data, x_var, y_var, calculate_correlat
   y_label <- gsub(x = y_label, pattern = "_", replacement = " ")
   plot_title <- noquote(str_to_title(paste(x_label, "by", y_label, " | \n", subregion)))
 
-  # Calculating the additional correlation data for the faceted variable (kmeans_label)
+  # Calculating the additional correlation data for the faceted variable (x_label)
   if (deparse(substitute(x_var)) == "kmeans") {
     data_rost <- data %>% filter(kmeans_label == "very rostral")
     data_caud <- data %>% filter(kmeans_label == "very caudal")
@@ -948,7 +976,7 @@ plot_correlation_by_subregion <- function(data, x_var, y_var, calculate_correlat
   } else if (deparse(substitute(x_var)) == "mean") {
     p <- ggplot(data, aes(x = {{ x_var }}, y = {{ y_var }}, shape = {{ plot_shape }}, size = point_size)) +
       geom_point(aes(color = {{ plot_color }})) +
-      geom_smooth(method = "lm", linewidth = 0.75, aes(color = NULL)) +
+      # geom_smooth(method = "lm", linewidth = 0.75, aes(color = NULL)) +
       stat_cor(method = "kendall", cor.coef.name = "tau") +
       theme(
         plot.title = element_text(size = 20, face = "bold", hjust = 0.5),
@@ -980,7 +1008,7 @@ plot_correlation_by_subregion <- function(data, x_var, y_var, calculate_correlat
       guides(size = "none") +
       facet_row(~mean_label, space = "fixed", scales = "fixed")
 
-    ggsave(plot = p, filename = paste(tolower(plot_title), "_", correlation_method, "_all_cohorts_map_based_separation_091121_not_removed_mean_based.png"), device = "png", width = 8, height = 8, units = "in", dpi = 600, bg = "white", path = "Outputs/Plots/exploratory_plots/")
+    ggsave(plot = p, filename = paste("Outputs/Plots/plots_for_joseph/", tolower(plot_title), "_", correlation_method, "_all_cohorts_map_based_separation_091121_removed_mean_based.png"), device = "png", width = 8, height = 8, units = "in", dpi = 600, bg = "white", path = "Outputs/Plots/plots_for_joseph/")
   } else {
     p <- ggplot(data, aes(x = {{ x_var }}, y = {{ y_var }}, shape = {{ plot_shape }}, size = point_size)) +
       geom_point(aes(color = {{ plot_color }})) +
@@ -1024,13 +1052,13 @@ plot_correlation_by_subregion <- function(data, x_var, y_var, calculate_correlat
 
 # For loop to step through all subregions
 for (s in unique(all_processed_dfs_filtered$subregion)) {
-  all_processed_dfs_filtered_subregion <- all_processed_dfs_filtered %>% filter(subregion == s)
-  # all_processed_dfs_filtered_subregion <- all_processed_dfs_filtered %>% filter(subregion == s & cohort != "#091121")
+  # all_processed_dfs_filtered_subregion <- all_processed_dfs_filtered %>% filter(subregion == s)
+  all_processed_dfs_filtered_subregion <- all_processed_dfs_filtered %>% filter(subregion == s & cohort != "#091121")
 
   plot_correlation_by_subregion(
     data = all_processed_dfs_filtered_subregion,
-    x_var = median,
-    y_var = average_errors,
+    x_var = mean,
+    y_var = average_latency,
     calculate_correlation = TRUE,
     correlation_method = "spearman",
     plot_color = cohort,
@@ -1060,23 +1088,23 @@ for (c in colnames(test_mat)) {
 }
 
 # Change line to access write folder
-all_files <- list.files(path = "Outputs/Tables/stats_tables/kmeans/", pattern = "By Average Errors")
+all_files <- list.files(path = "Outputs/Tables/stats_tables/joseph_files/091121_not_removed/", pattern = "By Average Latency")
 files_list <- list()
 for (f in all_files) {
-  current_file <- read.csv(file = paste0("Outputs/Tables/stats_tables/kmeans/", f), row.names = 1)
+  current_file <- read.csv(file = paste0("Outputs/Tables/stats_tables/joseph_files/091121_not_removed/", f), row.names = 1)
   files_list[[f]] <- current_file
 }
 
 cor_estimates <- bind_rows(files_list)
 cor_estimates <- cor_estimates %>%
   select(-method) %>%
-  mutate(row_name = paste(subregion, kmeans_label, sep = "_"))
+  mutate(row_name = paste(subregion, mean_label, sep = "_"))
 
 # Now moving our finished calculation matrix into our heatmap matrix
 for (s in unique(cor_estimates$subregion)) {
   current_sub <- filter(cor_estimates, subregion == s)
-  for (l in current_sub$kmeans_label) {
-    current_brain_region <- filter(current_sub, kmeans_label == l)
+  for (l in current_sub$mean_label) {
+    current_brain_region <- filter(current_sub, mean_label == l)
     test_mat[l, s] <- current_brain_region$estimate
     cor_outcome_mat[l, s] <- current_brain_region$p_value
     cor_outcome_sig_mat[l, s] <- current_brain_region$p_value.signif
@@ -1092,6 +1120,13 @@ analysis_type <- unique(cor_estimates$analysis_type)
 analysis_type <- analysis_type %>%
   str_to_title(.)
 
+
+
+# Define the color mapping
+col_fun <- circlize::colorRamp2(c(-0.5, 0, 1), c("blue", "white", "red"))
+
+
+
 p1 <- Heatmap(
   matrix = test_mat, show_heatmap_legend = TRUE,
   heatmap_legend_param = list(
@@ -1104,9 +1139,11 @@ p1 <- Heatmap(
     title_position = "topcenter",
     width = unit(0.8, "snpc"),
     height = unit(0.4, "snpc"),
+    at = c(-0.5, 0.0, 0.5, 1.0),
     labels_gp = gpar(fontsize = 14, fontface = "bold")
   ),
-  col = c("blue", "white", "red"),
+  # col = c("blue", "white", "red"),
+  col = col_fun,
   cluster_rows = FALSE,
   cluster_columns = FALSE,
   column_names_centered = TRUE,
@@ -1146,14 +1183,14 @@ p1 <- p1 %>%
 # Saving the finished heatmaps
 ```{r saving finished heatmaps}
 # PNG file format
-png(file = paste0("Outputs/Plots/finished_plots/complex_heatmap_combined_cohorts_by_subregion_", analysis_type, "_", outcome_type, ".png"), units = "in", width = 6, height = 6, res = 600)
+png(file = paste0("Outputs/Plots/finished_plots/complex_heatmap_combined_cohorts_by_subregion_", analysis_type, "_", outcome_type, "_091121_not_removed.png"), units = "in", width = 6, height = 6, res = 600)
 p1 <- draw(p1, height = unit(1, "cm") * 6)
 draw(p1, height = unit(1, "cm") * 6)
 dev.off()
 
 
 # SVG file format
-svg(file = paste0("Outputs/Plots/finished_plots/complex_heatmap_combined_cohorts_by_subregion_", analysis_type, "_", outcome_type, ".svg"), width = 6, height = 6)
+svg(file = paste0("Outputs/Plots/finished_plots/complex_heatmap_combined_cohorts_by_subregion_", analysis_type, "_", outcome_type, "_091121_not_removed.svg"), width = 6, height = 6)
 p1 <- draw(p1, height = unit(1, "cm") * 6)
 draw(p1, height = unit(1, "cm") * 6)
 dev.off()
@@ -1224,6 +1261,10 @@ all_sub_df <- bind_rows(all_subs)
 
 # Renaming % reduction column to reduction to make it easier to put in model formula
 colnames(all_sub_df)[2] <- "reduction"
+all_sub_df <- all_sub_df |>
+  group_by(cohort, subregion) |>
+  filter(!all(reduction == 0)) |>
+  ungroup()
 
 
 
@@ -1340,14 +1381,15 @@ process_dataframe_map_all_subs <- function(df, errors_summary = NULL, latency_su
     # Joining the errors and latency summaries by Cohort
     df <- df %>%
       mutate(
-        average_errors = rep(errors_summary, nrow(df)),
-        average_latency = rep(latency_summary, nrow(df))
+        left_join(errors_summary, by = c("cohort" = "Cohort")) %>%
+          left_join(latency_summary, by = c("cohort" = "Cohort"))
       )
 
     df <- df %>%
       mutate(
         average_errors = as.numeric(average_errors),
-        average_latency = as.numeric(average_latency)
+        average_latency = as.numeric(average_latency),
+        reduction = as.numeric(reduction)
       )
   }
 
@@ -1356,11 +1398,94 @@ process_dataframe_map_all_subs <- function(df, errors_summary = NULL, latency_su
 }
 
 
-# Generating the labels
-processed_dataframe <- process_dataframe_map_all_subs(all_sub_df, errors_summary = avg_errors, latency_summary = avg_latency, k = 2, print_results = FALSE, plot_silhouette = FALSE)
+# Function to make the k-means binning more dynamic instead of just binary
+process_dataframe_map_all_subs_dynamic_kmeans <- function(df, errors_summary = NULL, latency_summary = NULL, k = 2, print_results = TRUE, plot_silhouette = TRUE) {
+  # Check if there is unique reduction value
+  if (!check_unique_value(matrix(df$reduction))) {
+    # Mean and Median Approach
+    df <- df %>%
+      mutate(
+        mean_label = if_else(map <= mean(as.numeric(map)), "very rostral", "very caudal"),
+        median_label = if_else(map <= median(as.numeric(map)), "very rostral", "very caudal")
+      )
 
-# Processing of finished dataframe
-processed_dataframe_filtered <- filter(processed_dataframe, kmeans < 10)
+    # K-means Clustering
+    clustering <- kmeans(matrix(df$map), centers = k)
+    # Assign cluster labels to each observation
+    df$kmeans_label <- factor(clustering$cluster)
+
+    # Calculate silhouette scores
+    if (plot_silhouette) {
+      silhouette_scores <- silhouette(clustering$cluster, dist(df$map))
+      png(filename = paste0("Outputs/Plots/silhouette_plots/silhouette_plot_", k, "_clusters_all_subregions_all_cohorts_map.png"), width = 8, height = 8, units = "in", res = 600, bg = "white")
+      plot(silhouette_scores, main = paste0("K-means Clustering | Clusters: ", k), col = "skyblue")
+      dev.off()
+    }
+
+    # Print results
+    if (print_results) {
+      cat("K-means Clustering Results:\n")
+    }
+
+
+    # Joining averages for reduction and summaries for errors and latency by Cohort
+    # Calculate the average reduction for each kmeans_label group
+    average_reduction_kmeans <- df %>%
+      filter(!is.na(map) & !is.na(as.numeric(map))) %>%
+      group_by(kmeans_label) %>%
+      mutate(reduction = as.numeric(reduction)) %>%
+      summarize(average_reduction_kmeans = mean(reduction, na.rm = TRUE))
+
+    # Join this average reduction back to the original data frame
+    df <- df %>%
+      left_join(average_reduction_kmeans, by = "kmeans_label") %>%
+      rename(kmeans = average_reduction_kmeans)
+
+    # Now getting average reduction by mean_label
+    average_reduction_mean <- df %>%
+      group_by(mean_label) %>%
+      mutate(reduction = as.numeric(reduction)) %>%
+      summarize(average_reduction_mean = mean(reduction, na.rm = TRUE))
+
+
+    # Now getting average reduction by median_label
+    average_reduction_median <- df %>%
+      group_by(median_label) %>%
+      mutate(reduction = as.numeric(reduction)) %>%
+      summarize(average_reduction_median = mean(reduction, na.rm = TRUE))
+
+    # Join this average reduction back to the original data frame
+    df <- df %>%
+      left_join(average_reduction_mean, by = "mean_label") %>%
+      rename(mean = average_reduction_mean)
+
+    # Join this average reduction back to the original data frame
+    df <- df %>%
+      left_join(average_reduction_median, by = "median_label") %>%
+      rename(median = average_reduction_median)
+
+    # Joining the errors and latency summaries by Cohort
+    df <- df %>%
+      left_join(errors_summary, by = c("cohort" = "Cohort")) %>%
+      left_join(latency_summary, by = c("cohort" = "Cohort"))
+
+    df <- df %>%
+      mutate(
+        average_errors = as.numeric(average_errors),
+        average_latency = as.numeric(average_latency),
+        reduction = as.numeric(reduction)
+      )
+
+    # Return the processed dataframe
+    return(df)
+  }
+}
+
+
+
+# Generating the labels
+# Dynamic k-means
+processed_dataframe2 <- process_dataframe_map_all_subs_dynamic_kmeans(all_sub_df, errors_summary = df_errors_summary, latency_summary = df_latency_summary, k = 3, print_results = FALSE, plot_silhouette = TRUE)
 
 
 plot_correlation_all_subregions <- function(data, x_var, y_var, calculate_correlation = TRUE, correlation_method = "spearman", plot_color = cohort, plot_shape = kmeans_label, point_size = 2, x_label, y_label, plot_title, subregion = NULL) {
@@ -1463,17 +1588,115 @@ plot_correlation_all_subregions <- function(data, x_var, y_var, calculate_correl
 
   ggsave(plot = p, filename = paste(tolower(plot_title), "_", correlation_method, "_all_cohorts_map_based_separation_091121_not_removed_all_subregions_and_cohorts.png"), device = "png", width = 8, height = 8, units = "in", dpi = 600, bg = "white", path = "Outputs/Plots/finished_plots/")
 }
+```
 
 
-# Now running it to see what all cohorts and subregions together look like
-test <- plot_correlation_all_subregions(
-  data = processed_dataframe_filtered,
-  x_var = kmeans,
-  y_var = average_errors,
-  calculate_correlation = TRUE,
-  correlation_method = "spearman",
-  plot_color = cohort,
-  plot_shape = NULL,
-  subregion = NULL
-)
+# Regression over all subregions
+```{r regression over all subregions}
+random_seed <- 1714683568 # 1714683568
+# Now binning by 0.1 mm increments as we have too many coefficients
+# Function to generate bins and labels
+generate_bins_labels <- function(interval, min_value = 0, max_value = 1) {
+  # Generate the sequence of breaks based on the interval
+  bins <- seq(min_value, max_value, by = interval)
+
+  # Generate the labels based on the breaks
+  labels <- paste0(format(bins[-length(bins)], nsmall = 2), "-", format(bins[-1], nsmall = 2))
+
+  return(list(bins = bins, labels = labels))
+}
+
+
+interval <- 0.1
+generated_bins_labels <- generate_bins_labels(interval)
+bins <- generated_bins_labels$bins
+labels <- generated_bins_labels$labels
+
+
+processed_dataframe2 <- processed_dataframe2 |>
+  mutate(reduction_bin = ntile(reduction, n = n_distinct(kmeans_label))) |>
+  mutate(
+    reduction_bin = factor(reduction_bin),
+    kmeans_label = factor(kmeans_label),
+    mean_label = factor(mean_label),
+    median_label = factor(median_label),
+    reduction_bin = factor(reduction_bin)
+  )
+
+
+
+# Build and fit the regression model
+processed_dataframe2 <- processed_dataframe2 |>
+  drop_na()
+mod <- lm(average_latency ~ kmeans_label, data = processed_dataframe2)
+summary(mod)
+
+# Calculating RMSE
+RSS <- c(crossprod(mod$residuals))
+MSE <- RSS / length(mod$residuals)
+RMSE <- sqrt(MSE)
+print(RMSE)
+
+
+# Subregion specific models
+mod_analysis_by_sub <- function(sub = NULL, data = NULL){
+  current_sub <- filter(.data = {{data}}, subregion == {{sub}})
+  mod <- lm(average_latency ~ kmeans_label, data = current_sub)
+  print(summary(mod))
+  print(paste("RMSE:", sqrt(mean(mod$residuals^2))))
+}
+
+processed_dataframe2 <- processed_dataframe2 |>
+  filter(subregion != "ssp_m") |>
+  filter(subregion != "ssp_tr")
+
+# By subregion
+for (s in unique(processed_dataframe2$subregion)){
+  print(paste("Subregion: ", s))
+  mod_analysis_by_sub(sub = s, data = processed_dataframe2)
+}
+
+
+# By cohort
+mod_analysis_by_coh <- function(coh = NULL, data = NULL){
+  current_sub <- filter(.data = {{data}}, cohort == {{coh}})
+  mod <- lm(average_latency ~ kmeans_label, data = current_sub)
+  print(summary(mod))
+  print(paste("RMSE:", sqrt(mean(mod$residuals^2))))
+}
+
+processed_dataframe2 <- processed_dataframe2|>
+  filter(cohort != "#071022")
+
+for (c in unique(processed_dataframe2$cohort)){
+  print(paste("Cohort: ", c))
+  mod_analysis_by_coh(coh = c, data = processed_dataframe2)
+}
+```
+
+# Random Forest model
+```{r random forest model}
+library(randomForest)
+sum(!complete.cases(processed_dataframe2))
+rf_processed_dataframe2 <- processed_dataframe2 |>
+  drop_na()
+rf_mod <- randomForest(average_latency ~ kmeans_label, data = rf_processed_dataframe2)
+rf_mod
+
+#find number of trees that produce lowest test MSE
+which.min(rf_mod$mse)
+
+#find RMSE of best model
+sqrt(rf_mod$mse[which.min(rf_mod$mse)]) 
+
+plot(rf_mod)
+
+# Tuning RF model
+model_tuned <- tuneRF(
+               x=as.data.frame(rf_processed_dataframe2$kmeans_label), #define predictor variables
+               y=rf_processed_dataframe2$average_latency, #define response variable
+               ntreeTry=500,
+               improve=0.01,
+               trace=FALSE #don't show real-time progress
+               )
 ```
