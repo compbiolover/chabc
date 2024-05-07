@@ -912,6 +912,54 @@ plot_correlation_by_subregion <- function(data, x_var, y_var, calculate_correlat
   } else if (deparse(substitute(x_var)) == "mean") {
     data_rost <- data %>% filter(mean_label == "very rostral")
     data_caud <- data %>% filter(mean_label == "very caudal")
+
+    all_map_above_rost <- data_rost %>%
+      filter(map > mean(map, na.rm = TRUE))
+
+    all_map_below_rost <- data_rost %>%
+      filter(map < mean(map, na.rm = TRUE))
+
+    all_map_above_caud <- data_caud %>%
+      filter(map > mean(map, na.rm = TRUE))
+
+    all_map_below_caud <- data_caud %>%
+      filter(map < mean(map, na.rm = TRUE))
+
+    all_rost_strip_df <- bind_rows(all_map_above_rost, all_map_below_rost)
+    all_caud_strip_df <- bind_rows(all_map_above_caud, all_map_below_caud)
+    all_sub_plot_df <- bind_rows(all_rost_strip_df, all_caud_strip_df)
+
+    # rost_p <- ggplot(data = all_rost_strip_df, aes(x= mean_label, y = map, color = cohort))+
+    #   geom_jitter()+
+    #   theme(panel.background = element_blank(),
+    #         axis.title = element_text(size = 10),
+    #         axis.text = element_text(size = 9))+
+    #   xlab("")+
+    #   ylab("Map #")
+    #
+    # caud_p <- ggplot(data = all_caud_strip_df, aes(x= mean_label, y = map, color = cohort))+
+    #   geom_jitter()+
+    #   theme(panel.background = element_blank(),
+    #         axis.title = element_text(size = 10),
+    #         axis.text = element_text(size = 9))+
+    #   ylab("Map #")+
+    #   xlab("Mean Label")
+
+    sub_strip_p <- ggplot(data = all_sub_plot_df, aes(x = mean_label, y = map, color = cohort)) +
+      geom_jitter() +
+      theme(
+        panel.background = element_blank(),
+        axis.title = element_text(size = 10),
+        axis.text = element_text(size = 9)
+      ) +
+      ylab("Map #") +
+      xlab("Mean Label")
+
+    sub_strip_p <- sub_strip_p + stat_summary(
+      fun = mean, geom = "point", shape = 18,
+      size = 8, color = "black"
+    )+
+      coord_cartesian(ylim = c(4,9))
   } else {
     data_rost <- data %>% filter(median_label == "very rostral")
     data_caud <- data %>% filter(median_label == "very caudal")
@@ -1088,10 +1136,10 @@ for (c in colnames(test_mat)) {
 }
 
 # Change line to access write folder
-all_files <- list.files(path = "Outputs/Tables/stats_tables/joseph_files/091121_not_removed/", pattern = "By Average Latency")
+all_files <- list.files(path = "Outputs/Tables/stats_tables/", pattern = "By Average Latency")
 files_list <- list()
 for (f in all_files) {
-  current_file <- read.csv(file = paste0("Outputs/Tables/stats_tables/joseph_files/091121_not_removed/", f), row.names = 1)
+  current_file <- read.csv(file = paste0("Outputs/Tables/stats_tables/", f), row.names = 1)
   files_list[[f]] <- current_file
 }
 
@@ -1125,7 +1173,8 @@ analysis_type <- analysis_type %>%
 # Define the color mapping
 col_fun <- circlize::colorRamp2(c(-0.5, 0, 1), c("blue", "white", "red"))
 
-
+# Define column annotation for strip chart of the heatmap
+strip_p <- ggplot(aes())
 
 p1 <- Heatmap(
   matrix = test_mat, show_heatmap_legend = TRUE,
@@ -1142,7 +1191,6 @@ p1 <- Heatmap(
     at = c(-0.5, 0.0, 0.5, 1.0),
     labels_gp = gpar(fontsize = 14, fontface = "bold")
   ),
-  # col = c("blue", "white", "red"),
   col = col_fun,
   cluster_rows = FALSE,
   cluster_columns = FALSE,
@@ -1478,9 +1526,6 @@ plot_correlation_all_subregions <- function(data, x_var, y_var, calculate_correl
 
 # Regression over all subregions
 ```{r regression over all subregions}
-# random_seed <- 1714683568 # 1714683568
-# set.seed(random_seed)
-
 processed_dataframe2 <- processed_dataframe2 |>
   mutate(reduction_bin = ntile(reduction, n = n_distinct(kmeans_label))) |>
   mutate(
@@ -1492,79 +1537,78 @@ processed_dataframe2 <- processed_dataframe2 |>
   )
 
 
+# Function to fit a linear regression model and calculate RMSE
+fit_linear_model <- function(data, formula) {
+  model <- lm(formula, data = data)
 
-# Build and fit the regression model
-processed_dataframe2 <- processed_dataframe2 |>
-  drop_na()
+  # Calculate RMSE
+  residuals <- model$residuals
+  rss <- crossprod(residuals)
+  mse <- rss / length(residuals)
+  rmse <- sqrt(mse)
 
-kmeans_mod <- lm(average_latency ~ kmeans_label, data = processed_dataframe2)
-summary(kmeans_mod) # p-value: 0.002239, clusters 3 and 4 have p-value < 0.05
+  return(list(model = model, rmse = rmse))
+}
 
-mean_mod <- lm(average_latency ~ mean_label, data = processed_dataframe2)
-summary(mean_mod) # p-value: 0.00126
+# Function to process the dataframe and build linear regression models
+process_and_build_linear_models <- function(dataframe) {
+  processed_dataframe <- dataframe |>
+    drop_na()
 
-median_mod <- lm(average_latency ~ median_label, data = processed_dataframe2)
-summary(median_mod) # p-value: 0.000749
+  # Build and evaluate linear regression models
+  kmeans_model <- fit_linear_model(processed_dataframe, average_latency ~ kmeans_label)
+  mean_model <- fit_linear_model(processed_dataframe, average_latency ~ mean_label)
+  median_model <- fit_linear_model(processed_dataframe, average_latency ~ median_label)
+  reduction_model <- fit_linear_model(processed_dataframe, average_latency ~ reduction)
 
-# Calculating RMSE for kmeans model
-RSS <- c(crossprod(kmeans_mod$residuals))
-MSE <- RSS / length(kmeans_mod$residuals)
-RMSE <- sqrt(MSE)
-print(RMSE) # 0.1428596
+  # Return a list of models with their respective RMSEs
+  return(list(
+    kmeans_model = kmeans_model,
+    mean_model = mean_model,
+    median_model = median_model,
+    reduction_model = reduction_model
+  ))
+}
 
-# Calculating RMSE for mean model
-RSS <- c(crossprod(mean_mod$residuals))
-MSE <- RSS / length(mean_mod$residuals)
-RMSE <- sqrt(MSE)
-print(RMSE) #  0.1430648
+# Using the functions
+linear_models <- process_and_build_linear_models(processed_dataframe2)
 
-# Calculating RMSE for median model
-RSS <- c(crossprod(median_mod$residuals))
-MSE <- RSS / length(median_mod$residuals)
-RMSE <- sqrt(MSE)
-print(RMSE) #  0.1430173
+# Access the models and their RMSEs
+kmeans_model <- linear_models$kmeans_model
+kmeans_rmse <- kmeans_model$rmse
+print(paste("K-means RMSE:", kmeans_rmse))
+summary(kmeans_model$model) # Print model summary
 
+mean_model <- linear_models$mean_model
+mean_rmse <- mean_model$rmse
+print(paste("Mean RMSE:", mean_rmse))
+summary(mean_model$model) # Print model summary
 
+median_model <- linear_models$median_model
+median_rmse <- median_model$rmse
+print(paste("Median RMSE:", median_rmse))
+summary(median_model$model) # Print model summary
 
-# Just using reduction value to predict
-reduction_mod <- lm(average_latency ~ reduction, data = processed_dataframe2)
-summary(reduction_mod) # p-value:  0.168    
-
-# Calculating RMSE for reduction model
-RSS <- c(crossprod(reduction_mod$residuals))
-MSE <- RSS / length(reduction_mod$residuals)
-RMSE <- sqrt(MSE)
-print(RMSE) # 0.1434846
-
-
-# Calculating RMSE for mean model
-RSS <- c(crossprod(mean_mod$residuals))
-MSE <- RSS / length(mean_mod$residuals)
-RMSE <- sqrt(MSE)
-print(RMSE) #  0.1430648
-
-# Calculating RMSE for median model
-RSS <- c(crossprod(median_mod$residuals))
-MSE <- RSS / length(median_mod$residuals)
-RMSE <- sqrt(MSE)
-print(RMSE) #  0.1430173
-
+reduction_model <- linear_models$reduction_model
+reduction_rmse <- reduction_model$rmse
+print(paste("Reduction RMSE:", reduction_rmse))
+summary(reduction_model$model) # Print model summary
 ```
 
 # Random Forest model
 ```{r random forest model}
 # Function to build and evaluate a random forest model
 build_rf_model <- function(data, formula) {
-  set.seed(1715030415)  # Set a seed for reproducibility
-  
+  set.seed(1715030415) # Set a seed for reproducibility
+
   rf_model <- randomForest(formula, data = data)
-  
+
   # Find the number of trees that produce the lowest test MSE
   best_ntree <- which.min(rf_model$mse)
-  
+
   # Calculate the RMSE of the best model
   rmse <- sqrt(rf_model$mse[best_ntree])
-  
+
   return(list(model = rf_model, ntree = best_ntree, rmse = rmse))
 }
 
@@ -1573,12 +1617,12 @@ process_and_build_rf_models <- function(dataframe) {
   # Process the dataframe
   processed_dataframe <- dataframe |>
     drop_na()
-  
+
   # Build and evaluate random forest models
   kmeans_model <- build_rf_model(processed_dataframe, average_latency ~ kmeans_label)
   median_model <- build_rf_model(processed_dataframe, average_latency ~ median_label)
   mean_model <- build_rf_model(processed_dataframe, average_latency ~ mean_label)
-  
+
   # Return a list of models with their respective RMSEs
   return(list(
     kmeans_model = kmeans_model,
