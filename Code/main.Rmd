@@ -913,6 +913,7 @@ plot_correlation_by_subregion <- function(data, x_var, y_var, calculate_correlat
     data_rost <- data %>% filter(mean_label == "very rostral")
     data_caud <- data %>% filter(mean_label == "very caudal")
 
+    # To get all the map ids for the strip plot above the heatmap
     all_map_above_rost <- data_rost %>%
       filter(map > mean(map, na.rm = TRUE))
 
@@ -929,37 +930,26 @@ plot_correlation_by_subregion <- function(data, x_var, y_var, calculate_correlat
     all_caud_strip_df <- bind_rows(all_map_above_caud, all_map_below_caud)
     all_sub_plot_df <- bind_rows(all_rost_strip_df, all_caud_strip_df)
 
-    # rost_p <- ggplot(data = all_rost_strip_df, aes(x= mean_label, y = map, color = cohort))+
-    #   geom_jitter()+
-    #   theme(panel.background = element_blank(),
-    #         axis.title = element_text(size = 10),
-    #         axis.text = element_text(size = 9))+
-    #   xlab("")+
-    #   ylab("Map #")
-    #
-    # caud_p <- ggplot(data = all_caud_strip_df, aes(x= mean_label, y = map, color = cohort))+
-    #   geom_jitter()+
-    #   theme(panel.background = element_blank(),
-    #         axis.title = element_text(size = 10),
-    #         axis.text = element_text(size = 9))+
-    #   ylab("Map #")+
-    #   xlab("Mean Label")
-
+    # Strip plot 
     sub_strip_p <- ggplot(data = all_sub_plot_df, aes(x = mean_label, y = map, color = cohort)) +
-      geom_jitter() +
+      geom_jitter(size = 3) +
       theme(
         panel.background = element_blank(),
         axis.title = element_text(size = 10),
-        axis.text = element_text(size = 9)
+        axis.text = element_text(size = 9),
+        legend.position = "none",
+        plot.title = element_text(size = 12, face = "bold", hjust = 0.5)
       ) +
       ylab("Map #") +
-      xlab("Mean Label")
+      xlab("Mean Label")+
+      ggtitle({{subregion}})
 
     sub_strip_p <- sub_strip_p + stat_summary(
       fun = mean, geom = "point", shape = 18,
       size = 8, color = "black"
     )+
       coord_cartesian(ylim = c(4,9))
+    
   } else {
     data_rost <- data %>% filter(median_label == "very rostral")
     data_caud <- data %>% filter(median_label == "very caudal")
@@ -1094,16 +1084,18 @@ plot_correlation_by_subregion <- function(data, x_var, y_var, calculate_correlat
 
     ggsave(plot = p, filename = paste(tolower(plot_title), "_", correlation_method, "_all_cohorts_map_based_separation_091121_not_removed_median_based.png"), device = "png", width = 8, height = 8, units = "in", dpi = 600, bg = "white", path = "Outputs/Plots/exploratory_plots/")
   }
+  return(list(cor_plot = p, strip_plot = sub_strip_p))
 }
 
 
 
 # For loop to step through all subregions
+all_res <- list()
 for (s in unique(all_processed_dfs_filtered$subregion)) {
-  # all_processed_dfs_filtered_subregion <- all_processed_dfs_filtered %>% filter(subregion == s)
-  all_processed_dfs_filtered_subregion <- all_processed_dfs_filtered %>% filter(subregion == s & cohort != "#091121")
+  all_processed_dfs_filtered_subregion <- all_processed_dfs_filtered %>% filter(subregion == s)
+  # all_processed_dfs_filtered_subregion <- all_processed_dfs_filtered %>% filter(subregion == s & cohort != "#091121")
 
-  plot_correlation_by_subregion(
+res <- plot_correlation_by_subregion(
     data = all_processed_dfs_filtered_subregion,
     x_var = mean,
     y_var = average_latency,
@@ -1113,6 +1105,7 @@ for (s in unique(all_processed_dfs_filtered$subregion)) {
     plot_shape = NULL,
     subregion = all_processed_dfs_filtered_subregion$subregion
   )
+all_res[[s]] <- res
 }
 ```
 
