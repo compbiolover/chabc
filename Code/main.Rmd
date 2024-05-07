@@ -1549,76 +1549,57 @@ MSE <- RSS / length(median_mod$residuals)
 RMSE <- sqrt(MSE)
 print(RMSE) #  0.1430173
 
-
-# Subregion specific models
-mod_analysis_by_sub <- function(sub = NULL, data = NULL) {
-  current_sub <- filter(.data = {{ data }}, subregion == {{ sub }})
-  mod <- lm(average_latency ~ kmeans_label, data = current_sub)
-  print(summary(mod))
-  print(paste("RMSE:", sqrt(mean(mod$residuals^2))))
-}
-
-processed_dataframe2 <- processed_dataframe2 |>
-  filter(subregion != "ssp_m") |>
-  filter(subregion != "ssp_tr")
-
-# By subregion
-for (s in unique(processed_dataframe2$subregion)) {
-  print(paste("Subregion: ", s))
-  mod_analysis_by_sub(sub = s, data = processed_dataframe2)
-}
-
-
-# By cohort
-mod_analysis_by_coh <- function(coh = NULL, data = NULL) {
-  current_sub <- filter(.data = {{ data }}, cohort == {{ coh }})
-  mod <- lm(average_latency ~ kmeans_label, data = current_sub)
-  print(summary(mod))
-  print(paste("RMSE:", sqrt(mean(mod$residuals^2))))
-}
-
-processed_dataframe2 <- processed_dataframe2 |>
-  filter(cohort != "#071022")
-
-for (c in unique(processed_dataframe2$cohort)) {
-  print(paste("Cohort: ", c))
-  mod_analysis_by_coh(coh = c, data = processed_dataframe2)
-}
 ```
 
 # Random Forest model
 ```{r random forest model}
-rf_processed_dataframe2 <- processed_dataframe2 |>
-  drop_na()
+# Function to build and evaluate a random forest model
+build_rf_model <- function(data, formula) {
+  set.seed(1715030415)  # Set a seed for reproducibility
+  
+  rf_model <- randomForest(formula, data = data)
+  
+  # Find the number of trees that produce the lowest test MSE
+  best_ntree <- which.min(rf_model$mse)
+  
+  # Calculate the RMSE of the best model
+  rmse <- sqrt(rf_model$mse[best_ntree])
+  
+  return(list(model = rf_model, ntree = best_ntree, rmse = rmse))
+}
 
-set.seed(1715030415)
-rf_mod_kmeans <- randomForest(average_latency ~ kmeans_label, data = rf_processed_dataframe2)
-rf_mod_kmeans
+# Function to process the dataframe and build random forest models
+process_and_build_rf_models <- function(dataframe) {
+  # Process the dataframe
+  processed_dataframe <- dataframe |>
+    drop_na()
+  
+  # Build and evaluate random forest models
+  kmeans_model <- build_rf_model(processed_dataframe, average_latency ~ kmeans_label)
+  median_model <- build_rf_model(processed_dataframe, average_latency ~ median_label)
+  mean_model <- build_rf_model(processed_dataframe, average_latency ~ mean_label)
+  
+  # Return a list of models with their respective RMSEs
+  return(list(
+    kmeans_model = kmeans_model,
+    median_model = median_model,
+    mean_model = mean_model
+  ))
+}
 
-# find number of trees that produce lowest test MSE
-which.min(rf_mod_kmeans$mse)
+# Using the function now
+rf_models <- process_and_build_rf_models(processed_dataframe2)
 
-# find RMSE of best model
-sqrt(rf_mod_kmeans$mse[which.min(rf_mod_kmeans$mse)]) # 0.1394328
+# Access the models and their RMSEs
+kmeans_model <- rf_models$kmeans_model
+kmeans_rmse <- kmeans_model$rmse
+print(paste("K-means RMSE:", kmeans_rmse))
 
-# Median RF mod
-rf_mod_median <- randomForest(average_latency ~ median_label, data = rf_processed_dataframe2)
-rf_mod_median
+median_model <- rf_models$median_model
+median_rmse <- median_model$rmse
+print(paste("Median RMSE:", median_rmse))
 
-# find number of trees that produce lowest test MSE
-which.min(rf_mod_median$mse)
-
-# find RMSE of best model
-sqrt(rf_mod_median$mse[which.min(rf_mod_median$mse)]) # RMSE: 0.1427178
-
-
-# Mean RF mod
-rf_mod_mean <- randomForest(average_latency ~ mean_label, data = rf_processed_dataframe2)
-rf_mod_mean
-
-# find number of trees that produce lowest test MSE
-which.min(rf_mod_mean$mse)
-
-# find RMSE of best model
-sqrt(rf_mod_mean$mse[which.min(rf_mod_mean$mse)]) # RMSE: 0.1432065
+mean_model <- rf_models$mean_model
+mean_rmse <- mean_model$rmse
+print(paste("Mean RMSE:", mean_rmse))
 ```
